@@ -1,0 +1,11 @@
+[package]
+name = "revcomp"
+version = "0.1.0"
+
+[dependencies.gb-io]
+path = "../.."
+
+[dependencies]
+clap = "2.32.0"
+log = "0.4.5"
+env_logger = "0.5.13"

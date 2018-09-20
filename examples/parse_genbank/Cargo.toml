@@ -1,0 +1,10 @@
+[package]
+name = "parse_genbank"
+version = "0.1.0"
+
+[dependencies]
+reqwest = "0.9.0"
+flate2 = "1.0"
+
+[dependencies.gb-io]
+path = "../.."
