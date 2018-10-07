@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use seq::{Date, QualifierKey, Seq};
 use std::convert::AsRef;
 use std::io::{self, Write};
@@ -30,32 +31,60 @@ const POS_QUAL: &[QualifierKey] = &[
     qualifier_key!("anticodon"),
 ];
 
-pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
-    // LOCUS
-    write!(
-        file,
-        "LOCUS       {:<16} {:>11} bp    {}     {} {} {}\n", // TODO: Correct spacing
+/// Ported from Biopython (InsdcIO.py)
+fn locus_line(record: &Seq) -> String {
+    let mut locus = record.name.clone().unwrap_or_else(|| {
         record
-            .name
-            .as_ref()
-            .map(String::as_str)
-            .unwrap_or("UNTITLED"),
-        record.seq.len(),
-        record
-            .molecule_type
-            .as_ref()
-            .map(String::as_str)
-            .unwrap_or("DNA"),
+            .accession
+            .clone()
+            .unwrap_or_else(|| "UNTITLED".into())
+    });
+    let length = format!("{}", record.len());
+    if locus.len() + 1 + length.len() > 28 {
+        warn!("Locus name '{}' too long, truncating", locus);
+        locus = locus[..27 - length.len()].into();
+    }
+
+    if locus.split_whitespace().count() > 0 {
+        warn!("Replacing invalid whitepace in locus name with '_'");
+        locus = locus.split_whitespace().join("_");
+    }
+
+    let units = "bp"; // TODO: 'aa' support
+
+    let mol_type = if let Some(ref m) = record.molecule_type {
+        if m.len() > 7 {
+            warn!("Molecule type '{}' too long!", m);
+            ""
+        } else {
+            m
+        }
+    } else {
+        ""
+    };
+
+    let length = format!("{:>28}", length);
+    let rest = &length[locus.len()..];
+    locus.push_str(rest);
+
+    format!(
+        "LOCUS       {} {}    {:<7} {:<8} {} {}\n",
+        locus,
+        units,
+        mol_type,
         record.topology,
         record.division,
-        format!(
-            "{}",
-            record
-                .date
-                .as_ref()
-                .unwrap_or(&Date::from_ymd(1970, 1, 1).unwrap())
-        ).to_uppercase()
-    )?;
+        record
+            .date
+            .as_ref()
+            .unwrap_or(&Date::from_ymd(1970, 1, 1).unwrap())
+    )
+}
+
+pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
+    // LOCUS
+
+    write!(&mut file, "{}", locus_line(record))?;
 
     // Fields
 
