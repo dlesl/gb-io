@@ -45,7 +45,7 @@ fn locus_line(record: &Seq) -> String {
         locus = locus[..27 - length.len()].into();
     }
 
-    if locus.split_whitespace().count() > 0 {
+    if locus.split_whitespace().count() > 1 {
         warn!("Replacing invalid whitepace in locus name with '_'");
         locus = locus.split_whitespace().join("_");
     }
