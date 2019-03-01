@@ -1,6 +1,11 @@
 [package]
 name = "gb-io"
 version = "0.1.0"
+license = "MIT"
+authors = ["David Leslie"]
+homepage = "https://github.com/dlesl/gb-io"
+repository = "https://github.com/dlesl/gb-io"
+description = "A library for parsing, writing and manipulating Genbank sequence files"
 build = "build.rs"
 
 [build-dependencies]
