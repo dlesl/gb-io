@@ -209,11 +209,12 @@ named_args!(field<'a>(indent: usize, name: &str, keep_ws: bool) <String>,
 /// Concatenates lines, optionally interpolating with newlines
 fn concat_lines<'a, T: Iterator<Item = &'a [u8]>>(lines: T, keep_linebreaks: bool) -> Vec<u8> {
     if keep_linebreaks {
-        Itertools::flatten(lines.intersperse(b"\n"))
+        lines.intersperse(b"\n")
+            .flatten()
             .cloned()
             .collect()
     } else {
-        Itertools::flatten(lines).cloned().collect()
+        lines.flatten().cloned().collect()
     }
 }
 
