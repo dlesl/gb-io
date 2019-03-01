@@ -90,7 +90,6 @@ mod tests {
     #[test]
     fn biopython_tests() {
         for f in glob("tests/biopython_tests/*.gb").unwrap() {
-            // TODO: Add the other extensions
             let f = f.unwrap();
             println!("Testing: {:?}", f);
             let records = SeqReader::new(::std::fs::File::open(f).unwrap());

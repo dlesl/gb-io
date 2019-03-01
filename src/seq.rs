@@ -98,10 +98,7 @@ pub enum Position {
 
 #[derive(Debug, Fail, PartialEq)]
 pub enum PositionError {
-    #[fail(
-    display = "Can't determine position due to ambiguity: {}",
-    _0
-    )]
+    #[fail(display = "Can't determine position due to ambiguity: {}", _0)]
     Ambiguous(Position),
     #[fail(display = "Can't resolve external position: {}", _0)]
     External(Position),
@@ -111,8 +108,8 @@ pub enum PositionError {
     #[fail(display = "Empty position list encountered")]
     Empty,
     #[fail(
-    display = "Position refers to a location outside of the sequence: {}",
-    _0
+        display = "Position refers to a location outside of the sequence: {}",
+        _0
     )]
     OutOfBounds(Position),
 }
@@ -162,17 +159,17 @@ impl Position {
     }
 
     fn transform<P, V>(self, pos: &P, val: &V) -> Result<Position, PositionError>
-        where
-            P: Fn(Position) -> Result<Position, PositionError>,
-            V: Fn(i64) -> Result<i64, PositionError>,
+    where
+        P: Fn(Position) -> Result<Position, PositionError>,
+        V: Fn(i64) -> Result<i64, PositionError>,
     {
         pos(self)?.transform_impl(pos, val)
     }
 
     fn transform_impl<P, V>(self, pos: &P, val: &V) -> Result<Position, PositionError>
-        where
-            P: Fn(Position) -> Result<Position, PositionError>,
-            V: Fn(i64) -> Result<i64, PositionError>,
+    where
+        P: Fn(Position) -> Result<Position, PositionError>,
+        V: Fn(i64) -> Result<i64, PositionError>,
     {
         macro_rules! t_pos( ($i:expr) => ( pos($i)?.transform_impl(pos, val)?) );
         macro_rules! t_vec( ($i:expr) => (
@@ -185,10 +182,9 @@ impl Position {
         );
         let res = match self {
             // Apply the position closure
-            Position::Span(start, end) => Position::Span(
-                Box::new(t_pos!(*start)), // TODO: can we reuse the box?
-                Box::new(t_pos!(*end)),
-            ),
+            Position::Span(start, end) => {
+                Position::Span(Box::new(t_pos!(*start)), Box::new(t_pos!(*end)))
+            }
             Position::Complement(p) => Position::Complement(Box::new(t_pos!(*p))),
             Position::Order(positions) => Position::Order(t_vec!(positions)),
             Position::Bond(positions) => Position::Bond(t_vec!(positions)),
@@ -336,6 +332,7 @@ pub struct Reference {
 
 /// Maximum length for which the buffer holding the sequence will be
 /// preallocated. This isn't a hard limit though... should it be?
+#[doc(hidden)]
 pub const REASONABLE_SEQ_LEN: usize = 500 * 1000 * 1000;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -496,8 +493,7 @@ impl Seq {
             return Err(PositionError::OutOfBounds(p));
         }
         if last < first && !self.is_circular() {
-            return Err(PositionError::OutOfBounds(p)); // TODO new
-            // error for this
+            return Err(PositionError::OutOfBounds(p));
         }
         let len = self.len();
         p.transform(&|p| Ok(p), &|v| {
@@ -650,10 +646,10 @@ impl Seq {
             if let Ok((x, y)) = f.pos.find_bounds() {
                 if (x < 0 || y < 0 || x > self.len() || y > self.len())
                     || (!self.is_circular() && y < x)
-                    {
-                        warn!("Skipping feature with invalid position {}", f.pos);
-                        continue;
-                    }
+                {
+                    warn!("Skipping feature with invalid position {}", f.pos);
+                    continue;
+                }
                 let (mut x, mut y) = self.unwrap_range(x, y);
                 if x < start {
                     x += self.len();
@@ -688,10 +684,10 @@ impl Seq {
                 let (x, y) = f.pos.find_bounds()?;
                 if (x < 0 || y < 0 || x > self.len() || y > self.len())
                     || (!self.is_circular() && y < x)
-                    {
-                        warn!("Skipping feature with invalid position {}", f.pos);
-                        return Ok(());
-                    }
+                {
+                    warn!("Skipping feature with invalid position {}", f.pos);
+                    return Ok(());
+                }
                 let mut new_pos = Vec::new();
                 let (x, y) = self.unwrap_range(x, y);
                 if y >= start && end > x {
@@ -999,7 +995,7 @@ mod test {
             features,
             ..Seq::empty()
         };
-        
+
         for i in 0..100 {
             for j in 1..11 {
                 let res = s.extract_range(i, i + j);
@@ -1061,7 +1057,8 @@ mod test {
                     pos: p,
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
-                }).collect(),
+                })
+                .collect(),
             ..Seq::empty()
         };
         assert_eq!(
@@ -1075,8 +1072,9 @@ mod test {
             make_seq(vec![Position::Join(vec![
                 Position::simple_span(0, 1),
                 Position::simple_span(3, 4)
-            ])]).revcomp()
-                .features[0]
+            ])])
+            .revcomp()
+            .features[0]
                 .pos,
             Position::Complement(Box::new(Position::Join(vec![
                 Position::simple_span(5, 6),

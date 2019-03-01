@@ -765,7 +765,7 @@ named_args!(origin(len: Option<usize>)<(Option<String>, Vec<u8>)>,
        do_parse!(
                origin_text: origin_tag >>
                space >>
-               seq: apply!(sequence, len) >> //TODO: sanity check here
+               seq: apply!(sequence, len) >>
                (origin_text, seq)
        )
 );

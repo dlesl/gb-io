@@ -36,7 +36,7 @@ impl<T: Read> SeqReader<T> {
     }
 }
 
-/// Convenience method to parse an entire file at once
+/// Convenience method to parse an entire file at once. Uses the streaming parser.
 pub fn parse_file<P: AsRef<::std::path::Path>>(path: P) -> Result<Vec<Seq>, GbParserError> {
     let file = ::std::fs::File::open(path)?;
     SeqReader::new(file).collect()
@@ -52,7 +52,7 @@ pub fn parse_slice(data: &[u8]) -> Result<Vec<Seq>, GbParserError> {
         Ok((_, o)) => Ok(o),
         Err(e) => {
             Err(GbParserError::SyntaxError(
-                format!("{:?}", e), // TODO: chain this error after upgrading to nom 4.0
+                format!("{:?}", e),
             ))
         }
     }
