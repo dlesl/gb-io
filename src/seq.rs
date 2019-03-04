@@ -650,7 +650,8 @@ impl Seq {
                     warn!("Skipping feature with invalid position {}", f.pos);
                     continue;
                 }
-                let (mut x, mut y) = self.unwrap_range(x, y);
+                let (mut x, mut y) = self.unwrap_range(x, y + 1); // to exclusive
+                y -= 1; // back again
                 if x < start {
                     x += self.len();
                     y += self.len();
@@ -689,7 +690,8 @@ impl Seq {
                     return Ok(());
                 }
                 let mut new_pos = Vec::new();
-                let (x, y) = self.unwrap_range(x, y);
+                let (x, y) = self.unwrap_range(x, y + 1); // to exclusive
+                let y = y - 1; // back again
                 if y >= start && end > x {
                     let p = f.pos.clone().truncate(start, end)?;
                     let p = self.relocate_position(p, shift)?;
@@ -749,6 +751,18 @@ impl Seq {
             features,
             seq: self.extract_range_seq(start, end).into(),
             ..Seq::empty()
+        }
+    }
+
+    /// Returns a new `Seq`, rotated so that `origin` is at the start
+    pub fn set_origin(&self, origin: i64) -> Seq {
+        assert!(self.is_circular());
+        assert!(origin < self.len());
+        let rotated = self.extract_range(origin, origin);
+        Seq {
+            seq: rotated.seq,
+            features: rotated.features,
+            ..self.clone()
         }
     }
 
@@ -834,6 +848,7 @@ fn simplify(p: Position) -> Result<Position, PositionError> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use tests::init;
 
     #[test]
     fn test_merge_adj() {
@@ -1005,6 +1020,65 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_extract_circular_split() {
+        let features = vec![Feature {
+            pos: Position::Join(vec![Position::simple_span(0, 2), Position::simple_span(4, 9)]),
+            kind: FeatureKind::from(""),
+            qualifiers: Vec::new(),
+        }];
+        let s = Seq {
+            seq: (0..10).collect(),
+            topology: Topology::Circular,
+            features,
+            ..Seq::empty()
+        };
+
+        for i in 0..10 {
+            let res = s.extract_range(i, i + 10);
+            println!("{:?}", res.features);
+        }
+    }
+
+    #[test]
+    fn set_origin() {
+        init();
+        let seq = Seq {
+            seq: "0123456789".into(),
+            features: vec![
+                Feature {
+                    pos: Position::simple_span(2, 6),
+                    kind: feature_kind!(""),
+                    qualifiers: Vec::new(),
+                },
+                Feature {
+                    pos: Position::simple_span(0, 9),
+                    kind: feature_kind!(""),
+                    qualifiers: Vec::new(),
+                },
+                Feature {
+                    pos: Position::Join(vec![Position::simple_span(0, 3), Position::simple_span(7, 9)]),
+                    kind: feature_kind!(""),
+                    qualifiers: Vec::new(),
+                },
+                Feature {
+                    pos: Position::Single(0),
+                    kind: feature_kind!(""),
+                    qualifiers: Vec::new(),
+                },
+            ],
+            topology: Topology::Circular,
+            ..Seq::empty()
+        };
+        for i in 1..9 {
+            println!("******** {}", i);
+            let rotated = seq.set_origin(i);
+            println!("{:?}", rotated.features);
+            let rotated2 = rotated.set_origin(10 - i);
+            println!("rotated2: {:?}", rotated2.features);
+            assert_eq!(rotated2.features, seq.features);
+        }
+    }
     #[test]
     fn range_to_position() {
         let s = Seq {
