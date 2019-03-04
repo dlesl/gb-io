@@ -410,47 +410,47 @@ impl Seq {
         }
     }
 
-    /// "Normalises" a range on the chromosome, to make handling circular
+    /// "Normalises" an exclusive range on the chromosome, to make handling circular
     /// sequences simpler. For linear sequences, it doesn't do anything except
-    /// panic unless `first` and `last` are both within the sequence, or if `last
-    /// < first`. For circular sequences, all values, including negative values,
+    /// panic unless `start` and `end` are both within the sequence, or if `end
+    /// <= start`. For circular sequences, all values, including negative values,
     /// are allowed.
     ///
-    /// If `last` < `first`, the range is assumed to wrap around. The returned
+    /// If `end` <= `start`, the range is assumed to wrap around. The returned
     /// values will satisfy the following conditions:
-    /// - `0 <= first <= len`
-    /// - `first <= last`
+    /// - `0 <= first < len`
+    /// - `first < last`
     /// This means that in the case of a range which wraps around, `last` >= `len`.
-    pub fn unwrap_range(&self, first: i64, last: i64) -> (i64, i64) {
+    pub fn unwrap_range(&self, start: i64, end: i64) -> (i64, i64) {
         let len = self.len();
         match self.topology {
             Topology::Linear => {
-                assert!(first <= last);
-                assert!(first >= 0 && first <= len && last >= 0 && last <= len);
-                (first, last)
+                assert!(start < end);
+                assert!(start >= 0 && start < len && end > 0 && end <= len);
+                (start, end)
             }
             Topology::Circular => {
-                let mut first = first;
-                let mut last = last;
+                let mut start = start;
+                let mut end = end;
 
-                if first > last {
-                    last += len;
+                if start >= end {
+                    end += len;
                 }
 
-                while first >= len {
-                    first -= len;
-                    last -= len;
+                while start >= len {
+                    start -= len;
+                    end -= len;
                 }
 
-                while first < 0 {
-                    first += len;
-                    last += len;
+                while start < 0 {
+                    start += len;
+                    end += len;
                 }
 
-                assert!(first >= 0 && first < len);
-                assert!(last >= first);
+                assert!(start >= 0 && start < len);
+                assert!(end > start);
 
-                (first, last)
+                (start, end)
             }
         }
     }
@@ -1026,6 +1026,41 @@ mod test {
             s.range_to_position(5, 15).to_gb_format(),
             "join(6..10,1..5)"
         );
+    }
+    #[test]
+    fn unwrap_range_linear() {
+        let s = Seq {
+            seq: "01".into(),
+            ..Seq::empty()
+        };
+        assert_eq!(s.unwrap_range(0, 1), (0, 1));
+        assert_eq!(s.unwrap_range(0, 2), (0, 2));
+    }
+
+    #[test]
+    #[should_panic]
+    fn unwrap_range_linear_bad() {
+        let s = Seq {
+            seq: "01".into(),
+            ..Seq::empty()
+        };
+        let _ = s.unwrap_range(0, 3);
+    }
+
+    #[test]
+    fn unwrap_range_circular() {
+        let s = Seq {
+            seq: "01".into(),
+            topology: Topology::Circular,
+            ..Seq::empty()
+        };
+        assert_eq!(s.unwrap_range(0, 1), (0, 1));
+        assert_eq!(s.unwrap_range(0, 2), (0, 2));
+        assert_eq!(s.unwrap_range(0, 3), (0, 3));
+        assert_eq!(s.unwrap_range(-1, 0), (1, 2));
+        assert_eq!(s.unwrap_range(1, 2), (1, 2));
+        assert_eq!(s.unwrap_range(2, 3), (0, 1));
+        assert_eq!(s.unwrap_range(-2, -1), (0, 1));
     }
 
     #[test]
