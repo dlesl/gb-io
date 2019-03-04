@@ -25,6 +25,7 @@ bio = "0.25.0"
 [dev-dependencies]
 glob = "0.2.11"
 bencher = "0.1.5"
+env_logger = "0.6.0"
 
 [[bench]]
 name = "parse"

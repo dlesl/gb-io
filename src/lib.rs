@@ -32,7 +32,7 @@ pub mod reader;
 mod writer;
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use errors::GbParserError;
     use reader::*;
     use seq::*;
@@ -41,9 +41,15 @@ mod tests {
     extern crate glob;
     use tests::glob::glob;
 
+    extern crate env_logger;
+    pub fn init() {
+        let _ = env_logger::Builder::from_default_env().try_init();
+    }
+
 
     #[test]
     fn streaming() {
+        init();
         let f = File::open("tests/mg1655.gb").unwrap();
         let seq = SeqReader::new(f)
             .collect::<Result<Vec<_>, GbParserError>>()
@@ -53,6 +59,7 @@ mod tests {
     }
     #[test]
     fn test_seq() {
+        init();
         let f = File::open("tests/biopython_tests/gbvrl1_start.seq").unwrap();
         let seqs = SeqReader::new(f);
         for s in seqs {
@@ -62,6 +69,7 @@ mod tests {
     }
     #[test]
     fn ecoli_read_write() {
+        init();
         let ecoli = include_bytes!("../tests/mg1655.gb");
         let r = SeqReader::new(&ecoli[..]).next().unwrap().unwrap();
         let mut out = Vec::new();
@@ -76,12 +84,14 @@ mod tests {
 
     #[test]
     fn parse_circular() {
+        init();
         let circ = parse_slice(include_bytes!("../tests/circ.gb")).unwrap();
         assert_eq!(circ[0].topology, Topology::Circular);
     }
     #[test]
 
     fn test_multiple_records() {
+        init();
         let ls_orchid =
             parse_slice(include_bytes!("../tests/biopython_tests/ls_orchid.gb")).unwrap();
         assert_eq!(ls_orchid.len(), 94);
@@ -89,6 +99,7 @@ mod tests {
 
     #[test]
     fn biopython_tests() {
+        init();
         for f in glob("tests/biopython_tests/*.gb").unwrap() {
             let f = f.unwrap();
             println!("Testing: {:?}", f);
