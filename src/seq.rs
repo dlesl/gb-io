@@ -148,7 +148,7 @@ impl Position {
             | Position::OneOf(ref positions) => {
                 let (left, right): (Vec<_>, Vec<_>) = positions
                     .iter()
-                    .flat_map(|p| p.find_bounds()) // This skips any Err values
+                    .flat_map(Position::find_bounds) // This skips any Err values
                     .unzip();
                 let min = left.into_iter().min().ok_or(PositionError::Empty)?;
                 let max = right.into_iter().max().unwrap();
@@ -201,6 +201,7 @@ impl Position {
         };
         Ok(res)
     }
+
     /// Truncates this position, limiting it to the given bounds.
     /// Note: `higher` is exclusive
     pub fn truncate(self, lower: i64, higher: i64) -> Result<Position, PositionError> {
@@ -216,7 +217,7 @@ impl Position {
             }
             Ok(())
         };
-        self.transform(
+        let res = self.transform(
             &|mut p| {
                 match &mut p {
                     Position::Join(ref mut positions)
@@ -230,7 +231,8 @@ impl Position {
                 Ok(p)
             },
             &|v| Ok(cmp::max(lower, cmp::min(v, higher))),
-        )
+        )?;
+        simplify(res)
     }
 
     pub fn to_gb_format(&self) -> String {
@@ -561,7 +563,11 @@ impl Seq {
     /// "Shifts" a position forwards by `shift` NTs (can be negative)
     /// Note: If this fails you won't get the original `Position`
     /// back. If this is important, you should clone first
-    pub fn relocate_position(&self, p: Position, mut shift: i64) -> Result<Position, PositionError> {
+    pub fn relocate_position(
+        &self,
+        p: Position,
+        mut shift: i64,
+    ) -> Result<Position, PositionError> {
         while shift < 0 {
             shift += self.len();
         }
@@ -714,52 +720,12 @@ impl Seq {
                     warn!("Skipping feature with invalid position {}", f.pos);
                     return Ok(());
                 }
-                let mut new_pos = Vec::new();
-                let (x, y) = self.unwrap_range(x, y + 1); // to exclusive
-                let y = y - 1; // back again
-                if y >= start && end > x {
-                    let p = f.pos.clone().truncate(start, end)?;
-                    let p = self.relocate_position(p, shift)?;
-                    new_pos.push(p);
-                }
-                if end > self.len() {
-                    let end2 = end - self.len();
-                    if x < end2 {
-                        let p = f.pos.clone().truncate(0, end2)?;
-                        let p = self.relocate_position(p, self.len() + shift)?;
-                        new_pos.push(p);
-                    }
-                }
-                match new_pos.len() {
-                    0 => (),
-                    1 => {
-                        features.push(Feature {
-                            pos: new_pos.pop().unwrap(),
-                            ..f.clone()
-                        });
-                    }
-                    2 => {
-                        let res = match new_pos.into_iter().tuples().next().unwrap() {
-                            (Position::Join(mut a), Position::Join(b)) => {
-                                a.extend(b.into_iter());
-                                simplify(Position::Join(a))
-                            }
-                            (a, b) => simplify(Position::Join(vec![a, b])),
-                        };
-                        if let Ok(res) = res {
-                            features.push(Feature {
-                                pos: res,
-                                ..f.clone()
-                            });
-                        } else {
-                            warn!(
-                                "Something went wrong processing feature: {}",
-                                res.unwrap_err()
-                            );
-                        }
-                    }
-                    _ => unreachable!(),
-                };
+                let relocated = self.relocate_position(f.pos.clone(), shift)?;
+                let truncated = relocated.truncate(0, end - start)?;
+                features.push(Feature {
+                    pos: truncated,
+                    ..f.clone()
+                });
                 Ok(())
             };
             for f in &self.features {
