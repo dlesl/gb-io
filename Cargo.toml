@@ -19,15 +19,15 @@ circular = "0.2"
 failure = "0.1.5"
 string_cache = "0.7.3"
 log = "0.4"
-nom = "4.2.1"
+nom = "4.2.2"
 serde = { version = "1.0", optional = true, features = ["derive"] }
 bio = "0.25.0"
 
 
 [dev-dependencies]
-glob = "0.2.11"
+glob = "0.3.0"
 bencher = "0.1.5"
-env_logger = "0.6.0"
+env_logger = "0.6.1"
 
 [[bench]]
 name = "parse"
