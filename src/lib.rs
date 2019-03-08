@@ -88,6 +88,24 @@ pub mod tests {
         let circ = parse_slice(include_bytes!("../tests/circ.gb")).unwrap();
         assert_eq!(circ[0].topology, Topology::Circular);
     }
+
+    #[test]
+    fn circular_set_origin() {
+        init();
+        let circ = parse_slice(include_bytes!("../tests/circ.gb")).unwrap().pop().unwrap();
+        for i in 1..10 {
+            let rotated = circ.set_origin(i);
+            println!("lacZ: {:?}", rotated.features[2].pos);
+            let rotated_back = rotated.set_origin(circ.len() - i);
+            // assert_eq!(rotated_back.seq, circ.seq);
+            // assert_eq!(rotated_back.features.len(), circ.features.len());
+            // for f in 0..rotated_back.features.len() {
+            //     println!("{}", f);
+            //     assert_eq!(rotated_back.features[f], circ.features[f]);
+            // }
+            assert_eq!(rotated_back, circ);
+        }
+    }
     #[test]
 
     fn test_multiple_records() {
