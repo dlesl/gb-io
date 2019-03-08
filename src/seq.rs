@@ -1,5 +1,4 @@
 use bio::alphabets::dna::revcomp;
-use itertools::Itertools;
 use std::borrow::Cow;
 use std::cmp;
 use std::fmt;
@@ -757,10 +756,15 @@ impl Seq {
     pub fn set_origin(&self, origin: i64) -> Seq {
         assert!(self.is_circular());
         assert!(origin < self.len());
-        let rotated = self.extract_range(origin, origin);
+        let rotated = self.extract_range_seq(origin, origin);
         Seq {
-            seq: rotated.seq,
-            features: rotated.features,
+            seq: rotated.into(),
+            features: self
+                .features
+                .iter()
+                .cloned()
+                .flat_map(|f| self.relocate_feature(f, -origin))
+                .collect(),
             ..self.clone()
         }
     }
