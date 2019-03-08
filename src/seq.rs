@@ -460,10 +460,16 @@ impl Seq {
     /// Note: this is a rust-style, exclusive range
     pub fn range_to_position(&self, start: i64, end: i64) -> Position {
         match self.topology {
-            Topology::Linear => Position::Span(
-                Box::new(Position::Single(start)),
-                Box::new(Position::Single(end - 1)),
-            ),
+            Topology::Linear => {
+                if start == end {
+                    Position::Single(start)
+                } else {
+                    Position::Span(
+                        Box::new(Position::Single(start)),
+                        Box::new(Position::Single(end - 1)),
+                    )
+                }
+            }
             Topology::Circular => {
                 let (mut start, mut end) = self.unwrap_range(start, end);
                 if end > self.len() {
@@ -478,6 +484,8 @@ impl Seq {
                             Box::new(Position::Single(end - self.len() - 1)),
                         ),
                     ])
+                } else if start == end {
+                    Position::Single(start)
                 } else {
                     Position::Span(
                         Box::new(Position::Single(start)),
