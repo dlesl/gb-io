@@ -816,7 +816,7 @@ fn merge_adjacent(join: Vec<Position>) -> Vec<Position> {
     for p in join {
         if res.is_empty() {
             res.push(p);
-        } else if let (Some((_, b)), Some((c, d))) = (
+        } else if let (Some((a, b)), Some((c, d))) = (
             range_if_simple_span(res.last().unwrap()),
             range_if_simple_span(&p),
         ) {
@@ -827,6 +827,10 @@ fn merge_adjacent(join: Vec<Position>) -> Vec<Position> {
                         *x = Position::simple_span(b, d);
                     }
                     _ => unreachable!(),
+                }
+            } else if a == b && b == c && c == d {
+                if let Some(mut last) = res.last_mut() {
+                    *last = Position::Single(a)
                 }
             } else {
                 res.push(p);
@@ -852,6 +856,10 @@ fn flatten_join(v: Vec<Position>) -> Vec<Position> {
 /// This doesn't simplify everything yet...
 /// TODO: return original Position somehow on failure
 fn simplify(p: Position) -> Result<Position, PositionError> {
+    p.transform(&simplify_impl, &|v| Ok(v))
+}
+
+fn simplify_impl(p: Position) -> Result<Position, PositionError> {
     match p {
         Position::Join(xs) => {
             if xs.is_empty() {
@@ -861,9 +869,22 @@ fn simplify(p: Position) -> Result<Position, PositionError> {
             let mut xs = merge_adjacent(xs);
             assert!(!xs.is_empty());
             if xs.len() == 1 {
-                Ok(xs.pop().unwrap())
+                // remove the join, we now have a new type of position
+                // so we need to simplify again
+                Ok(simplify_impl(xs.pop().unwrap())?)
             } else {
                 Ok(Position::Join(xs))
+            }
+        }
+        Position::Span(a, b) => {
+            if let (Position::Single(a), Position::Single(b)) = (a.as_ref(), b.as_ref()) {
+                if a == b {
+                    Ok(Position::Single(*a))
+                } else {
+                    Ok(Position::simple_span(*a, *b)) // TODO: avoid this allocation
+                }
+            } else {
+                Ok(Position::Span(a.clone(), b.clone())) // TODO: temp
             }
         }
         p => Ok(p),
@@ -898,6 +919,10 @@ mod test {
         assert_eq!(
             merge_adjacent(vec![Position::Single(0), Position::simple_span(1, 5)]),
             vec![Position::simple_span(0, 5)]
+        );
+        assert_eq!(
+            merge_adjacent(vec![Position::Single(0), Position::Single(0)]),
+            vec![Position::Single(0)]
         );
     }
 
@@ -978,7 +1003,10 @@ mod test {
         let span1 = Position::Span(Box::new(Position::Single(7)), Box::new(Position::Single(9)));
         let span2 = Position::Span(Box::new(Position::Single(0)), Box::new(Position::Single(3)));
         let join = Position::Join(vec![span1, span2]);
-        assert_eq!(&s.relocate_position(join, -5).unwrap().to_gb_format(), "3..9");
+        assert_eq!(
+            &s.relocate_position(join, -5).unwrap().to_gb_format(),
+            "3..9"
+        );
     }
 
     #[test]

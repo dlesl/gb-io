@@ -192,7 +192,7 @@ FEATURES             Location/Qualifiers
                      /ApEinfo_revcolor="pink"
                      /ApEinfo_graphicformat="arrow_data {{0 1 2 0 0 -1} {} 0}
                      width 5 offset 0"
-     misc_feature    2469..2469
+     misc_feature    2469
                      /locus_tag="New Feature"
                      /label="New Feature"
                      /ApEinfo_label="New Feature"
