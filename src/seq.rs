@@ -9,7 +9,7 @@ use std::str;
 
 // use chrono::NaiveDate;
 
-pub use {FeatureKind, QualifierKey};
+pub use crate::{FeatureKind, QualifierKey};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
@@ -470,7 +470,7 @@ impl Seq {
                 }
             }
             Topology::Circular => {
-                let (mut start, mut end) = self.unwrap_range(start, end);
+                let (start, end) = self.unwrap_range(start, end);
                 if end > self.len() {
                     assert!(end < self.len() * 2, "Range wraps around more than once!");
                     Position::Join(vec![
@@ -718,30 +718,28 @@ impl Seq {
         debug!("Normalised: {} to {}", start, end);
         let shift = -start;
         let mut features = Vec::new();
-        {
-            let mut process_feature = |f: &Feature| -> Result<(), PositionError> {
-                let (x, y) = f.pos.find_bounds()?;
-                if (x < 0 || y < 0 || x > self.len() || y > self.len())
-                    || (!self.is_circular() && y < x)
-                {
-                    warn!("Skipping feature with invalid position {}", f.pos);
-                    return Ok(());
-                }
-                let relocated = self.relocate_position(f.pos.clone(), shift)?;
-                let truncated = relocated.truncate(0, end - start)?;
-                features.push(Feature {
-                    pos: truncated,
-                    ..f.clone()
-                });
-                Ok(())
-            };
-            for f in &self.features {
-                match process_feature(f) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        warn!("Skipping feature with tricky position: {}", e);
-                        continue;
-                    }
+        let mut process_feature = |f: &Feature| -> Result<(), PositionError> {
+            let (x, y) = f.pos.find_bounds()?;
+            if (x < 0 || y < 0 || x > self.len() || y > self.len())
+                || (!self.is_circular() && y < x)
+            {
+                warn!("Skipping feature with invalid position {}", f.pos);
+                return Ok(());
+            }
+            let relocated = self.relocate_position(f.pos.clone(), shift)?;
+            let truncated = relocated.truncate(0, end - start)?;
+            features.push(Feature {
+                pos: truncated,
+                ..f.clone()
+            });
+            Ok(())
+        };
+        for f in &self.features {
+            match process_feature(f) {
+                Ok(()) => {}
+                Err(e) => {
+                    warn!("Skipping feature with tricky position: {}", e);
+                    continue;
                 }
             }
         }
@@ -770,7 +768,7 @@ impl Seq {
     }
 
     pub fn write<T: Write>(&self, file: T) -> io::Result<()> {
-        ::writer::write(file, self)
+        crate::writer::write(file, self)
     }
 }
 
@@ -801,13 +799,13 @@ fn merge_adjacent(join: Vec<Position>) -> Vec<Position> {
             if b + 1 == c {
                 match res.last_mut() {
                     Some(Position::Span(_, ref mut b)) => **b = Position::Single(d),
-                    Some(mut x @ Position::Single(_)) => {
+                    Some(x @ Position::Single(_)) => {
                         *x = Position::simple_span(b, d);
                     }
                     _ => unreachable!(),
                 }
             } else if a == b && b == c && c == d {
-                if let Some(mut last) = res.last_mut() {
+                if let Some(last) = res.last_mut() {
                     *last = Position::Single(a)
                 }
             } else {
@@ -872,7 +870,7 @@ fn simplify_impl(p: Position) -> Result<Position, PositionError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::init;
+    use crate::tests::init;
 
     #[test]
     fn test_merge_adj() {

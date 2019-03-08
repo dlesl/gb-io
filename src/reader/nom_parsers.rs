@@ -2,7 +2,7 @@ use itertools::Itertools;
 use nom;
 use nom::types::CompleteByteSlice;
 use nom::{alpha, digit, line_ending, multispace, not_line_ending, space, IResult};
-use seq::{
+use crate::seq::{
     Date, Feature, FeatureKind, Position, QualifierKey, Reference, Seq, Source, Topology,
     REASONABLE_SEQ_LEN,
 };
@@ -10,7 +10,7 @@ use std::cmp;
 use std::iter::once;
 use std::str;
 
-use reader::errors::NomParserError;
+use crate::reader::errors::NomParserError;
 
 // A few helper functions, used throughout
 
@@ -869,7 +869,7 @@ mod test {
             match loc {
                 Ok((i, _)) => assert!(i.is_empty()),
                 Err(e) => {
-                    assert!(false, "{:?}", e);
+                    panic!("{:?}", e);
                 }
             }
             // incomplete locus test
@@ -914,7 +914,7 @@ mod test {
                     assert!(q.1 == t.2.map(String::from));
                 }
                 Err(x) => {
-                    assert!(false, "Parse error: {:?}", x);
+                    panic!("Parse error: {:?}", x);
                 }
             };
         }
@@ -965,10 +965,10 @@ mod test {
                 assert!(i == b"     CDS             ");
             }
             Err(nom::Err::Incomplete(_)) => {
-                assert!(false);
+                panic!();
             }
             Err(e) => {
-                assert!(false, "{:?}", e);
+                panic!("{:?}", e);
             }
         }
         incomplete_test(f, b"     CDS             ", &feature);
@@ -982,11 +982,11 @@ mod test {
             Ok((_, p)) => match p {
                 Position::Single(0) => {}
                 x => {
-                    assert!(false, "{:?}", x);
+                    panic!("{:?}", x);
                 }
             },
             x => {
-                assert!(false, "{:?}", x);
+                panic!("{:?}", x);
             }
         }
     }

@@ -1,5 +1,5 @@
 use nom::{self, AsChar, Offset};
-use reader::nom_parsers::{
+use crate::reader::nom_parsers::{
     any_field, base_count, contig_text, double_slash, feature, features_header, fill_seq_fields,
     line_ending_type_hack, locus, origin_tag, skip_preamble, NomParser,
 };
@@ -8,9 +8,9 @@ use std::io::Error as IoError;
 use std::io::Read;
 use std::io::Result as IoResult;
 
-use seq::*;
+use crate::seq::*;
 
-use errors::GbParserError;
+use crate::errors::GbParserError;
 
 extern crate circular;
 

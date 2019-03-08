@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use seq::{Date, QualifierKey, Seq};
+use crate::seq::{Date, QualifierKey, Seq};
 use std::convert::AsRef;
 use std::io::{self, Write};
 

@@ -4,7 +4,6 @@
 //! annotations and respecting circular molecules.
 
 // #![warn(missing_docs)]
-#![cfg_attr(feature = "cargo-clippy", feature(tool_lints))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::useless_format))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
@@ -33,13 +32,13 @@ mod writer;
 
 #[cfg(test)]
 pub mod tests {
-    use errors::GbParserError;
-    use reader::*;
-    use seq::*;
+    use crate::errors::GbParserError;
+    use crate::reader::*;
+    use crate::seq::*;
     use std::fs::File;
 
     extern crate glob;
-    use tests::glob::glob;
+    use crate::tests::glob::glob;
 
     extern crate env_logger;
     pub fn init() {
