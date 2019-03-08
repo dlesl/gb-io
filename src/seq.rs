@@ -501,17 +501,43 @@ impl Seq {
             Ok(res)
         })
     }
+    pub fn unwrap_position2(&self, p: Position, pivot: i64) -> Result<Position, PositionError> {
+        let (first, last) = p.find_bounds()?;
+        if first < 0 || last >= self.len() {
+            return Err(PositionError::OutOfBounds(p));
+        }
+        if last < first && !self.is_circular() {
+            return Err(PositionError::OutOfBounds(p));
+        }
+        let len = self.len();
+        p.transform(&|p| Ok(p), &|v| {
+            let res = if v < pivot { v + len } else { v };
+            Ok(res)
+        })
+    }
 
     pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
         let res = p.transform(
             &|p| {
-                if let Some((a, b)) = range_if_simple_span(&p) {
-                    if a < self.len() && b >= self.len() {
-                        assert!(b - self.len() < a);
-                        return Ok(Position::Join(vec![
-                            Position::simple_span(0, b - self.len()),
-                            Position::simple_span(a, self.len() - 1),
-                        ]));
+                if let Some((mut a, mut b)) = range_if_simple_span(&p) {
+                    // return Ok(self.range_to_position(a, b + 1));
+                    if a >= self.len() || b >= self.len() {
+                        assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
+                        while a >= self.len() {
+                            a -= self.len();
+                            b -= self.len();
+                        }
+                        if a == b {
+                            return Ok(Position::Single(a));
+                        } else if b < self.len() {
+                            return Ok(Position::simple_span(a, b));
+                        } else {
+                            let res = Position::Join(vec![
+                                Position::simple_span(a, self.len() - 1),
+                                Position::simple_span(0, b - self.len()),
+                            ]);
+                            return Ok(res);
+                        }
                     }
                 }
                 Ok(p)
@@ -535,19 +561,18 @@ impl Seq {
     /// "Shifts" a position forwards by `shift` NTs (can be negative)
     /// Note: If this fails you won't get the original `Position`
     /// back. If this is important, you should clone first
-    pub fn relocate_position(&self, p: Position, shift: i64) -> Result<Position, PositionError> {
-        let p = self.unwrap_position(p)?;
-        p.transform(&|p| simplify(p), &|v| {
-            let shifted = v + shift;
-            let res = if shifted < 0 {
-                assert!(self.is_circular()); // Error here?
-                shifted + self.len()
-            } else {
-                shifted
-            };
-            Ok(res)
-        })
+    pub fn relocate_position(&self, p: Position, mut shift: i64) -> Result<Position, PositionError> {
+        while shift < 0 {
+            shift += self.len();
+        }
+        while shift > self.len() {
+            shift -= self.len();
+        }
+        let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift))?;
+        let res = self.wrap_position(moved)?;
+        Ok(res)
     }
+
     // needs testing
     /// Note: If this fails you won't get the original `Position`
     /// back. If this is important, you should clone first
@@ -898,6 +923,65 @@ mod test {
     }
 
     #[test]
+    fn relocate_position() {
+        let s = Seq {
+            seq: b"0123456789".to_vec(),
+            topology: Topology::Circular,
+            ..Seq::empty()
+        };
+        assert_eq!(
+            &s.relocate_position(Position::simple_span(0, 9), 5)
+                .unwrap()
+                .to_gb_format(),
+            "join(6..10,1..5)"
+        );
+        assert_eq!(
+            &s.relocate_position(Position::simple_span(5, 7), 5)
+                .unwrap()
+                .to_gb_format(),
+            "1..3"
+        );
+        assert_eq!(
+            &s.relocate_position(
+                Position::Join(vec![
+                    Position::simple_span(7, 9),
+                    Position::simple_span(0, 2)
+                ]),
+                2
+            )
+            .unwrap()
+            .to_gb_format(),
+            "join(10,1..5)"
+        );
+        assert_eq!(
+            &s.relocate_position(
+                Position::Join(vec![
+                    Position::simple_span(8, 9),
+                    Position::simple_span(0, 1)
+                ]),
+                2
+            )
+            .unwrap()
+            .to_gb_format(),
+            "1..4"
+        );
+        assert_eq!(
+            &s.relocate_position(Position::simple_span(0, 2), 5)
+                .unwrap()
+                .to_gb_format(),
+            "6..8"
+        );
+        assert_eq!(
+            s.relocate_position(Position::Single(5), -9).unwrap(),
+            Position::Single(6)
+        );
+        let span1 = Position::Span(Box::new(Position::Single(7)), Box::new(Position::Single(9)));
+        let span2 = Position::Span(Box::new(Position::Single(0)), Box::new(Position::Single(3)));
+        let join = Position::Join(vec![span1, span2]);
+        assert_eq!(&s.relocate_position(join, -5).unwrap().to_gb_format(), "3..9");
+    }
+
+    #[test]
     fn extract_range_seq() {
         let s = Seq {
             seq: b"0123456789".to_vec(),
@@ -1153,6 +1237,35 @@ mod test {
             s.unwrap_position(pos).unwrap(),
             Position::simple_span(7, 13)
         )
+    }
+
+    #[test]
+    fn wrap_position() {
+        let s = Seq {
+            seq: (0..10).collect(),
+            topology: Topology::Circular,
+            ..Seq::empty()
+        };
+        assert_eq!(
+            Position::Single(0),
+            s.wrap_position(Position::Single(0)).unwrap()
+        );
+        assert_eq!(
+            Position::Single(0),
+            s.wrap_position(Position::Single(10)).unwrap()
+        );
+        assert_eq!(
+            Position::Single(1),
+            s.wrap_position(Position::Single(11)).unwrap()
+        );
+        assert_eq!(
+            Position::simple_span(0, 1),
+            s.wrap_position(Position::simple_span(10, 11)).unwrap()
+        );
+        assert_eq!(
+            Position::Join(vec![Position::Single(9), Position::simple_span(0, 4)]),
+            s.wrap_position(Position::simple_span(9, 14)).unwrap()
+        );
     }
 
     #[test]
