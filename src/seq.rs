@@ -202,36 +202,70 @@ impl Position {
     }
 
     /// Truncates this position, limiting it to the given bounds.
-    /// Note: `higher` is exclusive
-    pub fn truncate(self, lower: i64, higher: i64) -> Result<Position, PositionError> {
-        assert!(lower < higher);
-        let higher = higher - 1;
-        let filter_vec = |v: &mut Vec<Position>| -> Result<(), PositionError> {
-            let old = mem::replace(v, Vec::new());
-            for p in old {
-                let (a, b) = p.find_bounds()?;
-                if b >= lower && higher >= a {
-                    v.push(p);
+    /// Note: `higher` is exclusive.
+    /// `None` is returned if no part of the position lies within the bounds.
+    pub fn truncate(&self, start: i64, end: i64) -> Option<Position> {
+        use Position::*;
+        let filter = |ps: &[Position]| {
+            let res: Vec<_> = ps.iter().filter_map(|p| p.truncate(start, end)).collect();
+            if res.is_empty() {
+                None
+            } else {
+                Some(res)
+            }
+        };
+        match *self {
+            Single(a) | Before(a) | After(a) => {
+                if a >= start && a < end {
+                    Some(self.clone())
+                } else {
+                    None
                 }
             }
-            Ok(())
-        };
-        let res = self.transform(
-            &|mut p| {
-                match &mut p {
-                    Position::Join(ref mut positions)
-                    | Position::Order(ref mut positions)
-                    | Position::Bond(ref mut positions)
-                    | Position::OneOf(ref mut positions) => {
-                        filter_vec(positions)?;
-                    }
-                    _ => {}
+            Between(a, b) => {
+                if (a >= start && a < end) || (b >= start && b < end) {
+                    Some(self.clone())
+                } else {
+                    None
                 }
-                Ok(p)
+            }
+            Span(ref a, ref b) => match (a.truncate(start, end), b.truncate(start, end)) {
+                (Some(a), Some(b)) => Some(Position::Span(Box::new(a), Box::new(b))),
+                (Some(a), None) => Some(
+                    simplify_shallow(Position::Span(
+                        Box::new(a),
+                        Box::new(Position::Single(end - 1)),
+                    ))
+                    .unwrap(),
+                ),
+                (None, Some(b)) => Some(
+                    simplify_shallow(Position::Span(
+                        Box::new(Position::Single(start)),
+                        Box::new(b),
+                    ))
+                    .unwrap(),
+                ),
+                (None, None) => {
+                    // does the position span (start, end)?
+                    if let (Ok((x, _)), Ok((_, y))) = (a.find_bounds(), b.find_bounds()) {
+                        if x <= start && y >= end - 1 {
+                            Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap())
+                        } else {
+                            None
+                        }
+                    } else {
+                        warn!("Could not process position: {}", self.to_gb_format());
+                        None
+                    }
+                }
             },
-            &|v| Ok(cmp::max(lower, cmp::min(v, higher))),
-        )?;
-        simplify(res)
+            Complement(ref a) => a.truncate(start, end).map(|a| Complement(Box::new(a))),
+            Join(ref ps) => filter(ps).map(|v| simplify_shallow(Join(v)).unwrap()),
+            OneOf(ref ps) => filter(ps).map(OneOf),
+            Bond(ref ps) => filter(ps).map(Bond),
+            Order(ref ps) => filter(ps).map(Order),
+            External(_, _) | Gap(_) => Some(self.clone()),
+        }
     }
 
     pub fn to_gb_format(&self) -> String {
@@ -575,15 +609,18 @@ impl Seq {
         p: Position,
         mut shift: i64,
     ) -> Result<Position, PositionError> {
-        while shift < 0 {
-            shift += self.len();
+        if self.is_circular() {
+            while shift < 0 {
+                shift += self.len();
+            }
+            while shift >= self.len() {
+                shift -= self.len();
+            }
+            let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift))?;
+            self.wrap_position(moved)
+        } else {
+            p.transform(&|p| Ok(p), &|v| Ok(v + shift))
         }
-        while shift > self.len() {
-            shift -= self.len();
-        }
-        let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift))?;
-        let res = self.wrap_position(moved)?;
-        Ok(res)
     }
 
     // needs testing
@@ -716,7 +753,15 @@ impl Seq {
         debug!("Extract: {} to {}, len is {}", start, end, self.len());
         let (start, end) = self.unwrap_range(start, end);
         debug!("Normalised: {} to {}", start, end);
-        let shift = -start;
+        let mut shift = -start;
+        if self.is_circular() {
+            while shift < 0 {
+                shift += self.len();
+            }
+            while shift > self.len() {
+                shift -= self.len();
+            }
+        }
         let mut features = Vec::new();
         let mut process_feature = |f: &Feature| -> Result<(), PositionError> {
             let (x, y) = f.pos.find_bounds()?;
@@ -727,11 +772,12 @@ impl Seq {
                 return Ok(());
             }
             let relocated = self.relocate_position(f.pos.clone(), shift)?;
-            let truncated = relocated.truncate(0, end - start)?;
-            features.push(Feature {
-                pos: truncated,
-                ..f.clone()
-            });
+            if let Some(truncated) = relocated.truncate(0, end - start) {
+                features.push(Feature {
+                    pos: truncated,
+                    ..f.clone()
+                });
+            }
             Ok(())
         };
         for f in &self.features {
@@ -832,10 +878,10 @@ fn flatten_join(v: Vec<Position>) -> Vec<Position> {
 /// This doesn't simplify everything yet...
 /// TODO: return original Position somehow on failure
 fn simplify(p: Position) -> Result<Position, PositionError> {
-    p.transform(&simplify_impl, &|v| Ok(v))
+    p.transform(&simplify_shallow, &|v| Ok(v))
 }
 
-fn simplify_impl(p: Position) -> Result<Position, PositionError> {
+fn simplify_shallow(p: Position) -> Result<Position, PositionError> {
     match p {
         Position::Join(xs) => {
             if xs.is_empty() {
@@ -847,20 +893,20 @@ fn simplify_impl(p: Position) -> Result<Position, PositionError> {
             if xs.len() == 1 {
                 // remove the join, we now have a new type of position
                 // so we need to simplify again
-                Ok(simplify_impl(xs.pop().unwrap())?)
+                Ok(simplify_shallow(xs.pop().unwrap())?)
             } else {
                 Ok(Position::Join(xs))
             }
         }
-        Position::Span(a, b) => {
+        Position::Span(ref a, ref b) => {
             if let (Position::Single(a), Position::Single(b)) = (a.as_ref(), b.as_ref()) {
                 if a == b {
                     Ok(Position::Single(*a))
                 } else {
-                    Ok(Position::simple_span(*a, *b)) // TODO: avoid this allocation
+                    Ok(p)
                 }
             } else {
-                Ok(Position::Span(a.clone(), b.clone())) // TODO: temp
+                Ok(p)
             }
         }
         p => Ok(p),
@@ -1089,7 +1135,7 @@ mod test {
     }
 
     #[test]
-    fn _test_extract_circular() {
+    fn test_extract_circular() {
         let whole_seq = Feature {
             pos: Position::simple_span(0, 9),
             kind: FeatureKind::from(""),
@@ -1140,6 +1186,62 @@ mod test {
                 println!("2 {:?}", res.features[1]);
             }
         }
+    }
+
+    #[test]
+    fn extract_exclude_features() {
+        let s = Seq {
+            topology: Topology::Circular,
+            seq: (0..10).collect(),
+            features: vec![Feature {
+                pos: Position::simple_span(0, 3),
+                kind: feature_kind!(""),
+                qualifiers: vec![],
+            }],
+            ..Seq::empty()
+        };
+        let res = s.extract_range(4, 10);
+        assert_eq!(res.features, vec![]);
+        let res = s.extract_range(0, 1);
+        assert_eq!(res.features.len(), 1);
+        assert_eq!(&res.features[0].pos, &Position::Single(0));
+        let res = s.extract_range(3, 4);
+        assert_eq!(res.features.len(), 1);
+        assert_eq!(&res.features[0].pos, &Position::Single(0));
+        let res = s.extract_range(0, 10);
+        assert_eq!(&res.features[0].pos, &Position::simple_span(0, 3));
+    }
+
+    #[test]
+    fn truncate() {
+        assert_eq!(
+            Position::Single(0).truncate(0, 1),
+            Some(Position::Single(0))
+        );
+        assert_eq!(Position::Single(0).truncate(1, 2), None);
+        assert_eq!(
+            Position::simple_span(0, 2).truncate(1, 2),
+            Some(Position::Single(1))
+        );
+        assert_eq!(
+            Position::simple_span(0, 1).truncate(0, 2),
+            Some(Position::simple_span(0, 1))
+        );
+        assert_eq!(
+            Position::Complement(Box::new(Position::simple_span(0, 1))).truncate(0, 2),
+            Some(Position::Complement(Box::new(Position::simple_span(0, 1))))
+        );
+        assert_eq!(
+            Position::Complement(Box::new(Position::simple_span(0, 1))).truncate(10, 20),
+            None
+        );
+        assert_eq!(Position::simple_span(0, 1).truncate(3, 4), None);
+        let p = Position::Join(vec![
+            Position::simple_span(0, 2),
+            Position::simple_span(4, 6),
+        ]);
+        assert_eq!(p.truncate(0, 3), Some(Position::simple_span(0, 2)));
+        assert_eq!(p.truncate(10, 30), None);
     }
 
     #[test]
