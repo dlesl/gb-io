@@ -563,38 +563,64 @@ impl Seq {
 
     pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
         use Position::*;
-        let wrap_range = |mut a, mut b| {
-            assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
-            while a >= self.len() {
-                a -= self.len();
-                b -= self.len();
-            }
-            if a == b {
-                Single(a)
-            } else if b < self.len() {
-                Position::simple_span(a, b)
-            } else {
-                Join(vec![
-                    Position::simple_span(a, self.len() - 1),
-                    Position::simple_span(0, b - self.len()),
-                ])
-            }
-        };
+        // let wrap_range = |mut a, mut b| {
+        //     assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
+        //     while a >= self.len() {
+        //         a -= self.len();
+        //         b -= self.len();
+        //     }
+        //     if a == b {
+        //         Single(a)
+        //     } else if b < self.len() {
+        //         Position::simple_span(a, b)
+        //     } else {
+        //         Join(vec![
+        //             Position::simple_span(a, self.len() - 1),
+        //             Position::simple_span(0, b - self.len()),
+        //         ])
+        //     }
+        // };
+        // Single / Before / After
+        fn sba_mut(p: &mut Position) -> Option<&mut i64> { match p {
+            Single(ref mut a) | Before(ref mut a) | After(ref mut a) => Some(a),
+            _ => None,
+        }}
         let res = p.transform(
-            &|p| {
-                Ok(match p {
-                    Single(mut a) => {
-                        while a >= self.len(){
-                        a -= self.len();
+            &|mut p| {
+                match &mut p {
+                    Single(ref mut a) => {
+                        while *a >= self.len() {
+                            *a -= self.len();
                         }
-                        Single(a)
                     }
-                    Span(a, b) => match (a.as_ref(), b.as_ref()) {
-                        (Single(a), Single(b)) => wrap_range(*a, *b),
-                        _ => Span(a, b)
+                    Span(a, b) => {
+                        match (sba_mut(a), sba_mut(b)) {
+                            (Some(a_val), Some(b_val)) => {
+                                while *a_val >= self.len() {
+                                    *a_val -= self.len();
+                                    *b_val -= self.len();
+                                }
+                                // does it wrap?
+                                if *b_val >= self.len() {
+                                    // keep the terminal positions, but mutate them
+                                    // wrap b
+                                    *b_val -= self.len();
+                                    return Ok(Join(vec![Span(a.clone(), Box::new(Single(self.len() - 1))),
+                                    Span(Box::new(Single(0)), b.clone())]));
+                                }
+                            }
+                            _ => {}
+                        };
+                        // if split {
+                        //     return Ok(Join(vec![
+                        //         Span(*a, Box::new(Single(self.len() - 1))),
+                        //         Span(Box::new(Single(0)), *b),
+                        //     ]));
+                        // }
                     }
-                    p => p
-                })
+                    _ => {}
+                };
+                Ok(p)
                 // if let Some((a, b)) = range_if_simple_span(&p) {
                 //     if a >= self.len() || b >= self.len() {
                 //         Ok(wrap_range(a, b))
@@ -1446,6 +1472,11 @@ mod test {
         assert_eq!(
             Position::Join(vec![Position::Single(9), Position::simple_span(0, 4)]),
             s.wrap_position(Position::simple_span(9, 14)).unwrap()
+        );
+        assert_eq!(
+            s.wrap_position(
+            Position::span(Position::Single(8), Position::After(10))).unwrap(),
+            Position::span(Position::Single(9), Position::After(2)),
         );
     }
 
