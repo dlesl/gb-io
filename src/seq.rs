@@ -114,12 +114,14 @@ pub enum PositionError {
 }
 
 impl Position {
+    /// Convenience constructor
+    pub fn span(a: Position, b: Position) -> Position {
+        Position::Span(Box::new(a), Box::new(b))
+    }
+
     /// Convenience constructor for this commonly used variant
-    pub fn simple_span(first: i64, last: i64) -> Position {
-        Position::Span(
-            Box::new(Position::Single(first)),
-            Box::new(Position::Single(last)),
-        )
+    pub fn simple_span(a: i64, b: i64) -> Position {
+        Position::span(Position::Single(a), Position::Single(b))
     }
 
     /// Try to get the outermost bounds for a position. Returns the
@@ -494,7 +496,7 @@ impl Seq {
     pub fn range_to_position(&self, start: i64, end: i64) -> Position {
         match self.topology {
             Topology::Linear => {
-                if start == end {
+                if start + 1 == end {
                     Position::Single(start)
                 } else {
                     Position::Span(
@@ -560,30 +562,48 @@ impl Seq {
     }
 
     pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
+        use Position::*;
+        let wrap_range = |mut a, mut b| {
+            assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
+            while a >= self.len() {
+                a -= self.len();
+                b -= self.len();
+            }
+            if a == b {
+                Single(a)
+            } else if b < self.len() {
+                Position::simple_span(a, b)
+            } else {
+                Join(vec![
+                    Position::simple_span(a, self.len() - 1),
+                    Position::simple_span(0, b - self.len()),
+                ])
+            }
+        };
         let res = p.transform(
             &|p| {
-                if let Some((mut a, mut b)) = range_if_simple_span(&p) {
-                    // return Ok(self.range_to_position(a, b + 1));
-                    if a >= self.len() || b >= self.len() {
-                        assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
-                        while a >= self.len() {
-                            a -= self.len();
-                            b -= self.len();
+                Ok(match p {
+                    Single(mut a) => {
+                        while a >= self.len(){
+                        a -= self.len();
                         }
-                        if a == b {
-                            return Ok(Position::Single(a));
-                        } else if b < self.len() {
-                            return Ok(Position::simple_span(a, b));
-                        } else {
-                            let res = Position::Join(vec![
-                                Position::simple_span(a, self.len() - 1),
-                                Position::simple_span(0, b - self.len()),
-                            ]);
-                            return Ok(res);
-                        }
+                        Single(a)
                     }
-                }
-                Ok(p)
+                    Span(a, b) => match (a.as_ref(), b.as_ref()) {
+                        (Single(a), Single(b)) => wrap_range(*a, *b),
+                        _ => Span(a, b)
+                    }
+                    p => p
+                })
+                // if let Some((a, b)) = range_if_simple_span(&p) {
+                //     if a >= self.len() || b >= self.len() {
+                //         Ok(wrap_range(a, b))
+                //     } else {
+                //         Ok(p)
+                //     }
+                // } else {
+                //     Ok(p)
+                // }
             },
             &|v| Ok(v),
         )?;
@@ -818,21 +838,6 @@ impl Seq {
     }
 }
 
-/// Here we also treat a `Single` as a range, which simplifies the
-/// logic of `merge_adjacent`. While potentially confusing, I can't
-/// think of any situation in which that doesn't make sense and anyway
-/// it's a private fn
-fn range_if_simple_span(p: &Position) -> Option<(i64, i64)> {
-    match *p {
-        Position::Span(ref a, ref b) => match (a.as_ref(), b.as_ref()) {
-            (&Position::Single(a), &Position::Single(b)) => Some((a, b)),
-            _ => None,
-        },
-        Position::Single(a) => Some((a, a)),
-        _ => None,
-    }
-}
-
 fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
     use Position::*;
     let mut res = Vec::with_capacity(ps.len());
@@ -842,14 +847,15 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
                 (Single(ref a), &Single(b)) => {
                     if a + 1 == b {
                         *last = Position::simple_span(*a, b);
-                    } else if *a != b { // ie. join(1,1) (can this happen?)
+                    } else if *a != b {
+                        // ie. join(1,1) (can this happen?)
                         res.push(p);
                     }
                 }
                 (Single(ref a), Span(ref c, ref d)) => {
                     if let Single(c) = *c.as_ref() {
                         if a + 1 == c {
-                           *last = Span(Box::new(Single(*a)), d.clone());
+                            *last = Span(Box::new(Single(*a)), d.clone());
                         } else {
                             res.push(p);
                         }
@@ -875,7 +881,7 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
                         }
                     }
                 }
-                _ => res.push(p)
+                _ => res.push(p),
             }
         } else {
             res.push(p);
@@ -883,7 +889,6 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
     }
     res
 }
-
 
 fn flatten_join(v: Vec<Position>) -> Vec<Position> {
     let mut res = Vec::with_capacity(v.len());
@@ -941,6 +946,7 @@ mod test {
 
     #[test]
     fn test_merge_adj() {
+        use Position::*;
         assert_eq!(
             merge_adjacent(vec![
                 Position::simple_span(0, 3),
@@ -960,12 +966,20 @@ mod test {
             vec![Position::simple_span(0, 5)]
         );
         assert_eq!(
-            merge_adjacent(vec![Position::Single(0), Position::simple_span(1, 5)]),
+            merge_adjacent(vec![Single(0), Position::simple_span(1, 5)]),
             vec![Position::simple_span(0, 5)]
         );
         assert_eq!(
-            merge_adjacent(vec![Position::Single(0), Position::Single(0)]),
-            vec![Position::Single(0)]
+            merge_adjacent(vec![Single(0), Single(1)]),
+            vec![Position::simple_span(0, 1)]
+        );
+        assert_eq!(
+            &Join(merge_adjacent(vec![
+                Position::span(Before(1), Single(2)),
+                Position::span(Single(3), After(4))
+            ]))
+            .to_gb_format(),
+            "join(<2..>5)"
         );
     }
 
