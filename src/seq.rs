@@ -833,29 +833,49 @@ fn range_if_simple_span(p: &Position) -> Option<(i64, i64)> {
     }
 }
 
-fn merge_adjacent(join: Vec<Position>) -> Vec<Position> {
-    let mut res = Vec::with_capacity(join.len());
-    for p in join {
-        if res.is_empty() {
-            res.push(p);
-        } else if let (Some((a, b)), Some((c, d))) = (
-            range_if_simple_span(res.last().unwrap()),
-            range_if_simple_span(&p),
-        ) {
-            if b + 1 == c {
-                match res.last_mut() {
-                    Some(Position::Span(_, ref mut b)) => **b = Position::Single(d),
-                    Some(x @ Position::Single(_)) => {
-                        *x = Position::simple_span(b, d);
+fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
+    use Position::*;
+    let mut res = Vec::with_capacity(ps.len());
+    for p in ps {
+        if let Some(mut last) = res.last_mut() {
+            match (&mut last, &p) {
+                (Single(ref a), &Single(b)) => {
+                    if a + 1 == b {
+                        *last = Position::simple_span(*a, b);
+                    } else if *a != b { // ie. join(1,1) (can this happen?)
+                        res.push(p);
                     }
-                    _ => unreachable!(),
                 }
-            } else if a == b && b == c && c == d {
-                if let Some(last) = res.last_mut() {
-                    *last = Position::Single(a)
+                (Single(ref a), Span(ref c, ref d)) => {
+                    if let Single(c) = *c.as_ref() {
+                        if a + 1 == c {
+                           *last = Span(Box::new(Single(*a)), d.clone());
+                        } else {
+                            res.push(p);
+                        }
+                    }
                 }
-            } else {
-                res.push(p);
+                (Span(_, ref mut b), &Single(d)) => {
+                    if let Single(b_val) = *b.as_ref() {
+                        if b_val + 1 == d {
+                            *b.as_mut() = Single(d);
+                        } else {
+                            res.push(p);
+                        }
+                    }
+                }
+                (Span(_, ref mut b), Span(ref c, ref d)) => {
+                    if let Single(b_val) = *b.as_ref() {
+                        if let Single(c) = *c.as_ref() {
+                            if b_val + 1 == c {
+                                *b = d.clone();
+                            } else {
+                                res.push(p);
+                            }
+                        }
+                    }
+                }
+                _ => res.push(p)
             }
         } else {
             res.push(p);
@@ -863,6 +883,7 @@ fn merge_adjacent(join: Vec<Position>) -> Vec<Position> {
     }
     res
 }
+
 
 fn flatten_join(v: Vec<Position>) -> Vec<Position> {
     let mut res = Vec::with_capacity(v.len());
