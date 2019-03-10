@@ -229,13 +229,17 @@ impl Position {
             }
             Span((a, before), (b, after)) => {
                 match (a >= start && a < end, b >= start && b < end) {
-                    (true, true) => Some(Span((a, before), (b, after))),
-                    (true, false) => Some(Span((a, before), (b, After(false)))), // TODO: this should be true?
-                    (false, true) => Some(Span((start, Before(false)), (b, after))), // TODO
+                    (true, true) => Some(simplify_shallow(Span((a, before), (b, after))).unwrap()),
+                    (true, false) => {
+                        Some(simplify_shallow(Span((a, before), (end - 1, After(false)))).unwrap())
+                    } // TODO: this should be true?
+                    (false, true) => {
+                        Some(simplify_shallow(Span((start, Before(false)), (b, after))).unwrap())
+                    } // TODO
                     (false, false) => {
                         // does the position span (start, end)?
                         if a <= start && b >= end - 1 {
-                            Some(Position::simple_span(start, end - 1)) // TODO
+                            Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap()) // TODO
                         } else {
                             None
                         }
@@ -900,14 +904,21 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
                         res.push(Span((c, before), d));
                     }
                 }
-                (Span(a, (b, after)), Single(d)) => {
+                (Span(a, (b, _after)), Single(d)) => {
                     if b + 1 == d {
-                       *last = Span(a, (d, After(false))); // same here?
+                        *last = Span(a, (d, After(false))); // same here?
                     } else {
                         res.push(Single(d));
                     }
                 }
-                (_, p) => res.push(p)
+                (Span(a, (b, _after)), Span((c, before), d)) => {
+                    if b + 1 == c {
+                        *last = Span(a, d); // and here?
+                    } else {
+                        res.push(Span((c, before), d));
+                    }
+                }
+                (_, p) => res.push(p),
             }
         // match (&mut last, &p) {
         //     (Single(ref a), &Single(b)) => {
@@ -1505,9 +1516,9 @@ mod test {
             s.wrap_position(Position::simple_span(9, 14)).unwrap()
         );
         assert_eq!(
-            s.wrap_position(Position::Span((8, Before(false)), (10, After(true))))
-                .unwrap(),
-            Position::Span((9, Before(false)), (2, After(true))),
+            &s.wrap_position(Position::Span((8, Before(false)), (10, After(true))))
+                .unwrap().to_gb_format(),
+            "join(9..10,1..>1)"
         );
     }
 
