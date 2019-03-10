@@ -4,7 +4,6 @@ use std::cmp;
 use std::fmt;
 use std::io;
 use std::io::Write;
-use std::mem;
 use std::str;
 
 // use chrono::NaiveDate;
@@ -89,10 +88,6 @@ pub enum Position {
     Between(i64, i64),
     /// [<]x..[>]y
     Span((i64, Before), (i64, After)),
-    /// <x
-    // Before(i64),
-    /// >x
-    // After(i64),
     Complement(Box<Position>),
     Join(Vec<Position>),
     Order(Vec<Position>),
@@ -246,36 +241,6 @@ impl Position {
                     }
                 }
             }
-            // Span(ref a, ref b) => match (a.truncate(start, end), b.truncate(start, end)) {
-            //     (Some(a), Some(b)) => Some(Position::Span(Box::new(a), Box::new(b))),
-            //     (Some(a), None) => Some(
-            //         simplify_shallow(Position::Span(
-            //             Box::new(a),
-            //             Box::new(Position::Single(end - 1)),
-            //         ))
-            //         .unwrap(),
-            //     ),
-            //     (None, Some(b)) => Some(
-            //         simplify_shallow(Position::Span(
-            //             Box::new(Position::Single(start)),
-            //             Box::new(b),
-            //         ))
-            //         .unwrap(),
-            //     ),
-            //     (None, None) => {
-            //         // does the position span (start, end)?
-            //         if let (Ok((x, _)), Ok((_, y))) = (a.find_bounds(), b.find_bounds()) {
-            //             if x <= start && y >= end - 1 {
-            //                 Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap())
-            //             } else {
-            //                 None
-            //             }
-            //         } else {
-            //             warn!("Could not process position: {}", self.to_gb_format());
-            //             None
-            //         }
-            //     }
-            // },
             Complement(ref a) => a.truncate(start, end).map(|a| Complement(Box::new(a))),
             Join(ref ps) => filter(ps).map(|v| simplify_shallow(Join(v)).unwrap()),
             OneOf(ref ps) => filter(ps).map(OneOf),
@@ -286,7 +251,6 @@ impl Position {
     }
 
     pub fn to_gb_format(&self) -> String {
-        // helper fn
         fn position_list(positions: &[Position]) -> String {
             positions
                 .iter()
@@ -297,8 +261,6 @@ impl Position {
         match *self {
             Position::Single(p) => format!("{}", p + 1),
             Position::Between(a, b) => format!("{}^{}", a + 1, b + 1),
-            // Position::Before(p) => format!("<{}", p + 1),
-            // Position::After(p) => format!(">{}", p + 1),
             Position::Span((a, Before(before)), (b, After(after))) => {
                 let before = if before { "<" } else { "" };
                 let after = if after { ">" } else { "" };
@@ -568,24 +530,6 @@ impl Seq {
 
     pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
         use Position::*;
-        // let wrap_range = |mut a, mut b| {
-        //     assert!(a <= b, "Position isn't unwrapped"); // TODO make into an error
-        //     while a >= self.len() {
-        //         a -= self.len();
-        //         b -= self.len();
-        //     }
-        //     if a == b {
-        //         Single(a)
-        //     } else if b < self.len() {
-        //         Position::simple_span(a, b)
-        //     } else {
-        //         Join(vec![
-        //             Position::simple_span(a, self.len() - 1),
-        //             Position::simple_span(0, b - self.len()),
-        //         ])
-        //     }
-        // };
-        // Single / Before / After
         let res = p.transform(
             &|p| {
                 let res = match p {
@@ -608,44 +552,10 @@ impl Seq {
                                 Span((0, Before(false)), (b - self.len(), after)),
                             ])
                         }
-                        // match (sba_mut(a), sba_mut(b)) {
-                        //     (Some(a_val), Some(b_val)) => {
-                        //         while *a_val >= self.len() {
-                        //             *a_val -= self.len();
-                        //             *b_val -= self.len();
-                        //         }
-                        //         // does it wrap?
-                        //         if *b_val >= self.len() {
-                        //             // keep the terminal positions, but mutate them
-                        //             // wrap b
-                        //             *b_val -= self.len();
-                        //             return Ok(Join(vec![
-                        //                 Span(a.clone(), Box::new(Single(self.len() - 1))),
-                        //                 Span(Box::new(Single(0)), b.clone()),
-                        //             ]));
-                        //         }
-                        //     }
-                        //     _ => {}
-                        // };
-                        // if split {
-                        //     return Ok(Join(vec![
-                        //         Span(*a, Box::new(Single(self.len() - 1))),
-                        //         Span(Box::new(Single(0)), *b),
-                        //     ]));
-                        // }
                     }
                     p => p,
                 };
                 Ok(res)
-                // if let Some((a, b)) = range_if_simple_span(&p) {
-                //     if a >= self.len() || b >= self.len() {
-                //         Ok(wrap_range(a, b))
-                //     } else {
-                //         Ok(p)
-                //     }
-                // } else {
-                //     Ok(p)
-                // }
             },
             &|v| Ok(v),
         )?;
@@ -920,46 +830,6 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
                 }
                 (_, p) => res.push(p),
             }
-        // match (&mut last, &p) {
-        //     (Single(ref a), &Single(b)) => {
-        //         if a + 1 == b {
-        //             *last = Position::simple_span(*a, b);
-        //         } else if *a != b {
-        //             // ie. join(1,1) (can this happen?)
-        //             res.push(p);
-        //         }
-        //     }
-        //     (Single(ref a), Span(ref c, ref d)) => {
-        //         if let Single(c) = *c.as_ref() {
-        //             if a + 1 == c {
-        //                 *last = Span(Box::new(Single(*a)), d.clone());
-        //             } else {
-        //                 res.push(p);
-        //             }
-        //         }
-        //     }
-        //     (Span(_, ref mut b), &Single(d)) => {
-        //         if let Single(b_val) = *b.as_ref() {
-        //             if b_val + 1 == d {
-        //                 *b.as_mut() = Single(d);
-        //             } else {
-        //                 res.push(p);
-        //             }
-        //         }
-        //     }
-        //     (Span(_, ref mut b), Span(ref c, ref d)) => {
-        //         if let Single(b_val) = *b.as_ref() {
-        //             if let Single(c) = *c.as_ref() {
-        //                 if b_val + 1 == c {
-        //                     *b = d.clone();
-        //                 } else {
-        //                     res.push(p);
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     _ => res.push(p),
-        // }
         } else {
             res.push(p);
         }

@@ -627,16 +627,6 @@ named!(
     map!(numeric_i64!(), |i| Position::Single(i - 1)) // Convert from 1-based
 ); // to 0-based
 
-// named!(
-//     pos_before<CompleteByteSlice, Position>,
-//     map!(preceded!(tag!("<"), numeric_i64!()), |i| Position::Before(i - 1))
-// );
-
-// named!(
-//     pos_after<CompleteByteSlice, Position>,
-//     map!(preceded!(tag!(">"), numeric_i64!()), |i| Position::After(i - 1))
-// );
-
 named!(
     pos_between<CompleteByteSlice, Position>,
     map_res!(
@@ -658,17 +648,6 @@ named!(
 );
 
 // A range x..y
-// named!(
-//     pos_span<CompleteByteSlice, Position>,
-//     map!(
-//         separated_pair!(
-//             alt!(pos_single | pos_before | pos_between),
-//             tag!(".."),
-//             alt!(pos_single | pos_after | pos_between)
-//         ),
-//         |(a, b)| Position::Span(Box::new(a), Box::new(b))
-//     )
-// );
 named!(
     pos_span<CompleteByteSlice, Position>,
     do_parse!(
