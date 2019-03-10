@@ -3,7 +3,7 @@ use nom;
 use nom::types::CompleteByteSlice;
 use nom::{alpha, digit, line_ending, multispace, not_line_ending, space, IResult};
 use crate::seq::{
-    Date, Feature, FeatureKind, Position, QualifierKey, Reference, Seq, Source, Topology,
+    After, Before, Date, Feature, FeatureKind, Position, QualifierKey, Reference, Seq, Source, Topology,
     REASONABLE_SEQ_LEN,
 };
 use std::cmp;
@@ -627,15 +627,15 @@ named!(
     map!(numeric_i64!(), |i| Position::Single(i - 1)) // Convert from 1-based
 ); // to 0-based
 
-named!(
-    pos_before<CompleteByteSlice, Position>,
-    map!(preceded!(tag!("<"), numeric_i64!()), |i| Position::Before(i - 1))
-);
+// named!(
+//     pos_before<CompleteByteSlice, Position>,
+//     map!(preceded!(tag!("<"), numeric_i64!()), |i| Position::Before(i - 1))
+// );
 
-named!(
-    pos_after<CompleteByteSlice, Position>,
-    map!(preceded!(tag!(">"), numeric_i64!()), |i| Position::After(i - 1))
-);
+// named!(
+//     pos_after<CompleteByteSlice, Position>,
+//     map!(preceded!(tag!(">"), numeric_i64!()), |i| Position::After(i - 1))
+// );
 
 named!(
     pos_between<CompleteByteSlice, Position>,
@@ -658,15 +658,26 @@ named!(
 );
 
 // A range x..y
+// named!(
+//     pos_span<CompleteByteSlice, Position>,
+//     map!(
+//         separated_pair!(
+//             alt!(pos_single | pos_before | pos_between),
+//             tag!(".."),
+//             alt!(pos_single | pos_after | pos_between)
+//         ),
+//         |(a, b)| Position::Span(Box::new(a), Box::new(b))
+//     )
+// );
 named!(
     pos_span<CompleteByteSlice, Position>,
-    map!(
-        separated_pair!(
-            alt!(pos_single | pos_before | pos_between),
-            tag!(".."),
-            alt!(pos_single | pos_after | pos_between)
-        ),
-        |(a, b)| Position::Span(Box::new(a), Box::new(b))
+    do_parse!(
+        before: opt!(char!('<')) >>
+        a: numeric_i64!() >>
+        tag!("..") >>
+        after: opt!(char!('>')) >>
+        b: numeric_i64!() >>
+        (Position::Span((a - 1, Before(before.is_some())), (b - 1, After(after.is_some()))))
     )
 );
 
@@ -705,9 +716,8 @@ named!(
                     alt_complete!(
                         // everything except pos_external
                         pos_span | pos_join | pos_complement |
-                        pos_between | pos_single | pos_before |
-                        pos_after | pos_gap | pos_order |
-                        pos_oneof | pos_bond
+                        pos_between | pos_single | pos_gap | 
+                        pos_order | pos_oneof | pos_bond
                     )
                 )) >> (Position::External(accession.to_owned(), pos.map(Box::new)))
     )
@@ -726,8 +736,8 @@ named!(
     // range otherwise
     alt_complete!(
         pos_span | pos_join | pos_complement | pos_between |
-        pos_single | pos_before | pos_after | pos_gap |
-        pos_order | pos_oneof | pos_bond | pos_external
+        pos_single |  pos_gap | pos_order | pos_oneof | 
+        pos_bond | pos_external
     )
 );
 

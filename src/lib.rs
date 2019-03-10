@@ -74,6 +74,7 @@ pub mod tests {
         let mut out = Vec::new();
         r.write(&mut out).unwrap();
         out.push(b'\n');
+        // use std::io::Write;
         // File::create("/tmp/1").unwrap().write_all(&out[..]).unwrap();
         assert_eq!(&ecoli[..], &out[..]);
         assert_eq!(r.len, Some(r.seq.len()));

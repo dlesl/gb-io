@@ -65,6 +65,13 @@ impl fmt::Display for Date {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Before(pub bool);
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct After(pub bool);
+
 /// Represents a Genbank "position", used to specify the location of
 /// features and in the CONTIG line. See
 /// <http://www.insdc.org/files/feature_table.html> for a detailed
@@ -80,12 +87,12 @@ pub enum Position {
     Single(i64),
     /// n^n+1
     Between(i64, i64),
-    /// x..y
-    Span(Box<Position>, Box<Position>),
+    /// [<]x..[>]y
+    Span((i64, Before), (i64, After)),
     /// <x
-    Before(i64),
+    // Before(i64),
     /// >x
-    After(i64),
+    // After(i64),
     Complement(Box<Position>),
     Join(Vec<Position>),
     Order(Vec<Position>),
@@ -114,14 +121,9 @@ pub enum PositionError {
 }
 
 impl Position {
-    /// Convenience constructor
-    pub fn span(a: Position, b: Position) -> Position {
-        Position::Span(Box::new(a), Box::new(b))
-    }
-
     /// Convenience constructor for this commonly used variant
     pub fn simple_span(a: i64, b: i64) -> Position {
-        Position::span(Position::Single(a), Position::Single(b))
+        Position::Span((a, Before(false)), (b, After(false)))
     }
 
     /// Try to get the outermost bounds for a position. Returns the
@@ -129,11 +131,7 @@ impl Position {
     /// coordinates.
     pub fn find_bounds(&self) -> Result<(i64, i64), PositionError> {
         match *self {
-            Position::Span(ref start, ref end) => {
-                let (start, _) = start.find_bounds()?;
-                let (_, end) = end.find_bounds()?;
-                Ok((start, end))
-            }
+            Position::Span((a, _), (b, _)) => Ok((a, b)),
             Position::Complement(ref position) => Ok(position.find_bounds()?),
             Position::Join(ref positions) => {
                 let first = positions.first().ok_or(PositionError::Empty)?;
@@ -183,9 +181,6 @@ impl Position {
         );
         let res = match self {
             // Apply the position closure
-            Position::Span(start, end) => {
-                Position::Span(Box::new(t_pos!(*start)), Box::new(t_pos!(*end)))
-            }
             Position::Complement(p) => Position::Complement(Box::new(t_pos!(*p))),
             Position::Order(positions) => Position::Order(t_vec!(positions)),
             Position::Bond(positions) => Position::Bond(t_vec!(positions)),
@@ -194,8 +189,9 @@ impl Position {
             // Apply the value closure
             Position::Single(v) => Position::Single(val(v)?),
             Position::Between(a, b) => Position::Between(val(a)?, val(b)?),
-            Position::Before(v) => Position::Before(val(v)?),
-            Position::After(v) => Position::After(val(v)?),
+            Position::Span((a, before), (b, after)) => {
+                Position::Span((val(a)?, before), (val(b)?, after))
+            }
             // We don't touch values here
             Position::External(_, _) => self,
             Position::Gap(_) => self,
@@ -217,7 +213,7 @@ impl Position {
             }
         };
         match *self {
-            Single(a) | Before(a) | After(a) => {
+            Single(a) => {
                 if a >= start && a < end {
                     Some(self.clone())
                 } else {
@@ -231,36 +227,51 @@ impl Position {
                     None
                 }
             }
-            Span(ref a, ref b) => match (a.truncate(start, end), b.truncate(start, end)) {
-                (Some(a), Some(b)) => Some(Position::Span(Box::new(a), Box::new(b))),
-                (Some(a), None) => Some(
-                    simplify_shallow(Position::Span(
-                        Box::new(a),
-                        Box::new(Position::Single(end - 1)),
-                    ))
-                    .unwrap(),
-                ),
-                (None, Some(b)) => Some(
-                    simplify_shallow(Position::Span(
-                        Box::new(Position::Single(start)),
-                        Box::new(b),
-                    ))
-                    .unwrap(),
-                ),
-                (None, None) => {
-                    // does the position span (start, end)?
-                    if let (Ok((x, _)), Ok((_, y))) = (a.find_bounds(), b.find_bounds()) {
-                        if x <= start && y >= end - 1 {
-                            Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap())
+            Span((a, before), (b, after)) => {
+                match (a >= start && a < end, b >= start && b < end) {
+                    (true, true) => Some(Span((a, before), (b, after))),
+                    (true, false) => Some(Span((a, before), (b, After(false)))), // TODO: this should be true?
+                    (false, true) => Some(Span((start, Before(false)), (b, after))), // TODO
+                    (false, false) => {
+                        // does the position span (start, end)?
+                        if a <= start && b >= end - 1 {
+                            Some(Position::simple_span(start, end - 1)) // TODO
                         } else {
                             None
                         }
-                    } else {
-                        warn!("Could not process position: {}", self.to_gb_format());
-                        None
                     }
                 }
-            },
+            }
+            // Span(ref a, ref b) => match (a.truncate(start, end), b.truncate(start, end)) {
+            //     (Some(a), Some(b)) => Some(Position::Span(Box::new(a), Box::new(b))),
+            //     (Some(a), None) => Some(
+            //         simplify_shallow(Position::Span(
+            //             Box::new(a),
+            //             Box::new(Position::Single(end - 1)),
+            //         ))
+            //         .unwrap(),
+            //     ),
+            //     (None, Some(b)) => Some(
+            //         simplify_shallow(Position::Span(
+            //             Box::new(Position::Single(start)),
+            //             Box::new(b),
+            //         ))
+            //         .unwrap(),
+            //     ),
+            //     (None, None) => {
+            //         // does the position span (start, end)?
+            //         if let (Ok((x, _)), Ok((_, y))) = (a.find_bounds(), b.find_bounds()) {
+            //             if x <= start && y >= end - 1 {
+            //                 Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap())
+            //             } else {
+            //                 None
+            //             }
+            //         } else {
+            //             warn!("Could not process position: {}", self.to_gb_format());
+            //             None
+            //         }
+            //     }
+            // },
             Complement(ref a) => a.truncate(start, end).map(|a| Complement(Box::new(a))),
             Join(ref ps) => filter(ps).map(|v| simplify_shallow(Join(v)).unwrap()),
             OneOf(ref ps) => filter(ps).map(OneOf),
@@ -282,10 +293,12 @@ impl Position {
         match *self {
             Position::Single(p) => format!("{}", p + 1),
             Position::Between(a, b) => format!("{}^{}", a + 1, b + 1),
-            Position::Before(p) => format!("<{}", p + 1),
-            Position::After(p) => format!(">{}", p + 1),
-            Position::Span(ref start, ref end) => {
-                format!("{}..{}", start.to_gb_format(), end.to_gb_format())
+            // Position::Before(p) => format!("<{}", p + 1),
+            // Position::After(p) => format!(">{}", p + 1),
+            Position::Span((a, Before(before)), (b, After(after))) => {
+                let before = if before { "<" } else { "" };
+                let after = if after { ">" } else { "" };
+                format!("{}{}..{}{}", before, a + 1, after, b + 1)
             }
             Position::Complement(ref p) => format!("complement({})", p.to_gb_format()),
             Position::Join(ref positions) => format!("join({})", position_list(positions)),
@@ -499,10 +512,7 @@ impl Seq {
                 if start + 1 == end {
                     Position::Single(start)
                 } else {
-                    Position::Span(
-                        Box::new(Position::Single(start)),
-                        Box::new(Position::Single(end - 1)),
-                    )
+                    Position::simple_span(start, end - 1)
                 }
             }
             Topology::Circular => {
@@ -510,22 +520,13 @@ impl Seq {
                 if end > self.len() {
                     assert!(end < self.len() * 2, "Range wraps around more than once!");
                     Position::Join(vec![
-                        Position::Span(
-                            Box::new(Position::Single(start)),
-                            Box::new(Position::Single(self.len() - 1)),
-                        ),
-                        Position::Span(
-                            Box::new(Position::Single(0)),
-                            Box::new(Position::Single(end - self.len() - 1)),
-                        ),
+                        Position::simple_span(start, self.len() - 1),
+                        Position::simple_span(0, end - self.len() - 1),
                     ])
                 } else if start == end {
                     Position::Single(start)
                 } else {
-                    Position::Span(
-                        Box::new(Position::Single(start)),
-                        Box::new(Position::Single(end - 1)),
-                    )
+                    Position::simple_span(start, end - 1)
                 }
             }
         }
@@ -581,36 +582,47 @@ impl Seq {
         //     }
         // };
         // Single / Before / After
-        fn sba_mut(p: &mut Position) -> Option<&mut i64> { match p {
-            Single(ref mut a) | Before(ref mut a) | After(ref mut a) => Some(a),
-            _ => None,
-        }}
         let res = p.transform(
-            &|mut p| {
-                match &mut p {
-                    Single(ref mut a) => {
-                        while *a >= self.len() {
-                            *a -= self.len();
+            &|p| {
+                let res = match p {
+                    Single(mut a) => {
+                        while a >= self.len() {
+                            a -= self.len();
                         }
+                        Single(a)
                     }
-                    Span(a, b) => {
-                        match (sba_mut(a), sba_mut(b)) {
-                            (Some(a_val), Some(b_val)) => {
-                                while *a_val >= self.len() {
-                                    *a_val -= self.len();
-                                    *b_val -= self.len();
-                                }
-                                // does it wrap?
-                                if *b_val >= self.len() {
-                                    // keep the terminal positions, but mutate them
-                                    // wrap b
-                                    *b_val -= self.len();
-                                    return Ok(Join(vec![Span(a.clone(), Box::new(Single(self.len() - 1))),
-                                    Span(Box::new(Single(0)), b.clone())]));
-                                }
-                            }
-                            _ => {}
-                        };
+                    Span((mut a, before), (mut b, after)) => {
+                        while a >= self.len() {
+                            a -= self.len();
+                            b -= self.len();
+                        }
+                        if b < self.len() {
+                            Span((a, before), (b, after))
+                        } else {
+                            Join(vec![
+                                Span((a, before), (self.len() - 1, After(false))),
+                                Span((0, Before(false)), (b - self.len(), after)),
+                            ])
+                        }
+                        // match (sba_mut(a), sba_mut(b)) {
+                        //     (Some(a_val), Some(b_val)) => {
+                        //         while *a_val >= self.len() {
+                        //             *a_val -= self.len();
+                        //             *b_val -= self.len();
+                        //         }
+                        //         // does it wrap?
+                        //         if *b_val >= self.len() {
+                        //             // keep the terminal positions, but mutate them
+                        //             // wrap b
+                        //             *b_val -= self.len();
+                        //             return Ok(Join(vec![
+                        //                 Span(a.clone(), Box::new(Single(self.len() - 1))),
+                        //                 Span(Box::new(Single(0)), b.clone()),
+                        //             ]));
+                        //         }
+                        //     }
+                        //     _ => {}
+                        // };
                         // if split {
                         //     return Ok(Join(vec![
                         //         Span(*a, Box::new(Single(self.len() - 1))),
@@ -618,9 +630,9 @@ impl Seq {
                         //     ]));
                         // }
                     }
-                    _ => {}
+                    p => p,
                 };
-                Ok(p)
+                Ok(res)
                 // if let Some((a, b)) = range_if_simple_span(&p) {
                 //     if a >= self.len() || b >= self.len() {
                 //         Ok(wrap_range(a, b))
@@ -676,7 +688,7 @@ impl Seq {
         let p = p.transform(
             &|mut p| {
                 match p {
-                    Position::Span(ref mut a, ref mut b) => mem::swap(a, b),
+                    // Position::Span(ref mut a, ref mut b) => mem::swap(a, b),
                     Position::Join(ref mut positions)
                     | Position::Order(ref mut positions)
                     | Position::Bond(ref mut positions)
@@ -686,8 +698,11 @@ impl Seq {
                     _ => (),
                 };
                 let p = match p {
+                    Position::Span((a, Before(before)), (b, After(after))) => {
+                        Position::Span((b, Before(after)), (a, After(before)))
+                    }
                     Position::Between(a, b) => Position::Between(b, a),
-                    Position::After(x) => Position::Before(x),
+                    // Position::After(x) => Position::Before(x),
                     p => p,
                 };
                 Ok(p)
@@ -866,49 +881,74 @@ impl Seq {
 
 fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
     use Position::*;
-    let mut res = Vec::with_capacity(ps.len());
+    let mut res: Vec<Position> = Vec::with_capacity(ps.len());
     for p in ps {
-        if let Some(mut last) = res.last_mut() {
-            match (&mut last, &p) {
-                (Single(ref a), &Single(b)) => {
+        if let Some(last) = res.last_mut() {
+            match (last.clone(), p) {
+                (Single(a), Single(b)) => {
                     if a + 1 == b {
-                        *last = Position::simple_span(*a, b);
-                    } else if *a != b {
+                        *last = Position::simple_span(a, b);
+                    } else if a != b {
                         // ie. join(1,1) (can this happen?)
-                        res.push(p);
+                        res.push(Single(b));
                     }
                 }
-                (Single(ref a), Span(ref c, ref d)) => {
-                    if let Single(c) = *c.as_ref() {
-                        if a + 1 == c {
-                            *last = Span(Box::new(Single(*a)), d.clone());
-                        } else {
-                            res.push(p);
-                        }
+                (Single(a), Span((c, before), d)) => {
+                    if a + 1 == c {
+                        *last = Span((a, Before(false)), d); // TODO: take before from new span? (ie. move it left?)
+                    } else {
+                        res.push(Span((c, before), d));
                     }
                 }
-                (Span(_, ref mut b), &Single(d)) => {
-                    if let Single(b_val) = *b.as_ref() {
-                        if b_val + 1 == d {
-                            *b.as_mut() = Single(d);
-                        } else {
-                            res.push(p);
-                        }
+                (Span(a, (b, after)), Single(d)) => {
+                    if b + 1 == d {
+                       *last = Span(a, (d, After(false))); // same here?
+                    } else {
+                        res.push(Single(d));
                     }
                 }
-                (Span(_, ref mut b), Span(ref c, ref d)) => {
-                    if let Single(b_val) = *b.as_ref() {
-                        if let Single(c) = *c.as_ref() {
-                            if b_val + 1 == c {
-                                *b = d.clone();
-                            } else {
-                                res.push(p);
-                            }
-                        }
-                    }
-                }
-                _ => res.push(p),
+                (_, p) => res.push(p)
             }
+        // match (&mut last, &p) {
+        //     (Single(ref a), &Single(b)) => {
+        //         if a + 1 == b {
+        //             *last = Position::simple_span(*a, b);
+        //         } else if *a != b {
+        //             // ie. join(1,1) (can this happen?)
+        //             res.push(p);
+        //         }
+        //     }
+        //     (Single(ref a), Span(ref c, ref d)) => {
+        //         if let Single(c) = *c.as_ref() {
+        //             if a + 1 == c {
+        //                 *last = Span(Box::new(Single(*a)), d.clone());
+        //             } else {
+        //                 res.push(p);
+        //             }
+        //         }
+        //     }
+        //     (Span(_, ref mut b), &Single(d)) => {
+        //         if let Single(b_val) = *b.as_ref() {
+        //             if b_val + 1 == d {
+        //                 *b.as_mut() = Single(d);
+        //             } else {
+        //                 res.push(p);
+        //             }
+        //         }
+        //     }
+        //     (Span(_, ref mut b), Span(ref c, ref d)) => {
+        //         if let Single(b_val) = *b.as_ref() {
+        //             if let Single(c) = *c.as_ref() {
+        //                 if b_val + 1 == c {
+        //                     *b = d.clone();
+        //                 } else {
+        //                     res.push(p);
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     _ => res.push(p),
+        // }
         } else {
             res.push(p);
         }
@@ -934,8 +974,9 @@ fn simplify(p: Position) -> Result<Position, PositionError> {
 }
 
 fn simplify_shallow(p: Position) -> Result<Position, PositionError> {
+    use Position::*;
     match p {
-        Position::Join(xs) => {
+        Join(xs) => {
             if xs.is_empty() {
                 return Err(PositionError::Empty);
             }
@@ -947,20 +988,10 @@ fn simplify_shallow(p: Position) -> Result<Position, PositionError> {
                 // so we need to simplify again
                 Ok(simplify_shallow(xs.pop().unwrap())?)
             } else {
-                Ok(Position::Join(xs))
+                Ok(Join(xs))
             }
         }
-        Position::Span(ref a, ref b) => {
-            if let (Position::Single(a), Position::Single(b)) = (a.as_ref(), b.as_ref()) {
-                if a == b {
-                    Ok(Position::Single(*a))
-                } else {
-                    Ok(p)
-                }
-            } else {
-                Ok(p)
-            }
-        }
+        Span((a, Before(false)), (b, After(false))) if a == b => Ok(Single(a)),
         p => Ok(p),
     }
 }
@@ -1001,8 +1032,8 @@ mod test {
         );
         assert_eq!(
             &Join(merge_adjacent(vec![
-                Position::span(Before(1), Single(2)),
-                Position::span(Single(3), After(4))
+                Position::Span((1, Before(true)), (2, After(false))),
+                Position::Span((3, Before(false)), (4, After(true)))
             ]))
             .to_gb_format(),
             "join(<2..>5)"
@@ -1020,8 +1051,8 @@ mod test {
             s.relocate_position(Position::Single(5), -9),
             Ok(Position::Single(6))
         );
-        let span1 = Position::Span(Box::new(Position::Single(7)), Box::new(Position::Single(9)));
-        let span2 = Position::Span(Box::new(Position::Single(0)), Box::new(Position::Single(3)));
+        let span1 = Position::simple_span(7, 9);
+        let span2 = Position::simple_span(0, 3);
         assert_eq!(span1.to_gb_format(), String::from("8..10"));
         let join = Position::Join(vec![span1, span2]);
         assert_eq!(
@@ -1083,8 +1114,8 @@ mod test {
             s.relocate_position(Position::Single(5), -9).unwrap(),
             Position::Single(6)
         );
-        let span1 = Position::Span(Box::new(Position::Single(7)), Box::new(Position::Single(9)));
-        let span2 = Position::Span(Box::new(Position::Single(0)), Box::new(Position::Single(3)));
+        let span1 = Position::simple_span(7, 9);
+        let span2 = Position::simple_span(0, 3);
         let join = Position::Join(vec![span1, span2]);
         assert_eq!(
             &s.relocate_position(join, -5).unwrap().to_gb_format(),
@@ -1474,9 +1505,9 @@ mod test {
             s.wrap_position(Position::simple_span(9, 14)).unwrap()
         );
         assert_eq!(
-            s.wrap_position(
-            Position::span(Position::Single(8), Position::After(10))).unwrap(),
-            Position::span(Position::Single(9), Position::After(2)),
+            s.wrap_position(Position::Span((8, Before(false)), (10, After(true))))
+                .unwrap(),
+            Position::Span((9, Before(false)), (2, After(true))),
         );
     }
 
