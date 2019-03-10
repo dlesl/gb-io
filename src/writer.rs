@@ -26,7 +26,7 @@ const FTQUAL_NO_QUOTE: &[QualifierKey] = &[
 ];
 
 const POS_QUAL: &[QualifierKey] = &[
-    // should be formatted like Positions
+    // should be formatted like Locations
     qualifier_key!("transl_except"),
     qualifier_key!("anticodon"),
 ];
@@ -118,10 +118,10 @@ pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
         file.write_all(b"FEATURES             Location/Qualifiers\n")?;
         for f in &record.features {
             let first_indent = format!("     {:<15} ", f.kind);
-            let pos = f.pos.to_gb_format();
-            wrap_position(
+            let location = f.location.to_gb_format();
+            wrap_location(
                 &mut file,
-                &pos,
+                &location,
                 MAX_WIDTH,
                 first_indent.as_str(),
                 QUALIFIER_INDENT,
@@ -133,7 +133,7 @@ pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
                         let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
                         let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);
                         if POS_QUAL.iter().any(|x| x == key) {
-                            wrap_position(
+                            wrap_location(
                                 &mut file,
                                 val,
                                 MAX_WIDTH,
@@ -159,7 +159,7 @@ pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
     // CONTIG, maybe
 
     if let Some(ref contig) = record.contig {
-        wrap_position(
+        wrap_location(
             &mut file,
             &contig.to_gb_format(),
             MAX_WIDTH,
@@ -218,8 +218,8 @@ where
     Ok(())
 }
 
-/// Wrap a genbank position, splitting on commas if possible
-fn wrap_position<T: Write>(
+/// Wrap a genbank location, splitting on commas if possible
+fn wrap_location<T: Write>(
     mut file: T,
     mut text: &str,
     max_width: usize,
@@ -228,10 +228,10 @@ fn wrap_position<T: Write>(
 ) -> io::Result<()> {
     let mut indent = first_indent;
     while indent.len() + text.len() > max_width {
-        let split_at = if let Some(pos) = text[..max_width - indent.len()].rfind(',') {
-            pos + 1
+        let split_at = if let Some(location) = text[..max_width - indent.len()].rfind(',') {
+            location + 1
         } else {
-            warn!("Couldn't split position appropriately!");
+            warn!("Couldn't split location appropriately!");
             max_width - indent.len()
         };
         writeln!(file, "{}{}", indent, &text[..split_at])?;

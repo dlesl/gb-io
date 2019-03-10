@@ -95,7 +95,7 @@ pub mod tests {
         let circ = parse_slice(include_bytes!("../tests/circ.gb")).unwrap().pop().unwrap();
         for i in 1..10 {
             let rotated = circ.set_origin(i);
-            println!("lacZ: {:?}", rotated.features[2].pos);
+            println!("lacZ: {:?}", rotated.features[2].location);
             let rotated_back = rotated.set_origin(circ.len() - i);
             // assert_eq!(rotated_back.seq, circ.seq);
             // assert_eq!(rotated_back.features.len(), circ.features.len());

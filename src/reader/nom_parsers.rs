@@ -3,7 +3,7 @@ use nom;
 use nom::types::CompleteByteSlice;
 use nom::{alpha, digit, line_ending, multispace, not_line_ending, space, IResult};
 use crate::seq::{
-    After, Before, Date, Feature, FeatureKind, Position, QualifierKey, Reference, Seq, Source, Topology,
+    After, Before, Date, Feature, FeatureKind, Location, QualifierKey, Reference, Seq, Source, Topology,
     REASONABLE_SEQ_LEN,
 };
 use std::cmp;
@@ -418,11 +418,11 @@ fn qualifier_value_bare_bytes(input: &[u8], indent: usize) -> IResult<&[u8], Vec
     Ok((i, res))
 }
 
-fn pos_text(i: &[u8], indent: usize) -> IResult<&[u8], Position> {
+fn pos_text(i: &[u8], indent: usize) -> IResult<&[u8], Location> {
     map_res!(
         i,
         apply!(qualifier_value_bare_bytes, indent),
-        |r: Vec<u8>| match position(CompleteByteSlice(&r)) {
+        |r: Vec<u8>| match location(CompleteByteSlice(&r)) {
             Ok((_, p)) => Ok(p),               // TODO: Check we're matching the whole input
             Err(e) => Err(format!("{:?}", e)), // TODO: Pass the error on somehow
         }
@@ -606,10 +606,10 @@ named!(
         spaces_before: map!(is_a!(" "), <[_]>::len) >> kind: call!(feature_kind)
             >> spaces_after: map!(is_a!(" "), <[_]>::len)
             >> indent: value!(spaces_before + kind.len() + spaces_after)
-            >> pos: apply!(pos_text, indent)
+            >> location: apply!(pos_text, indent)
             >> qualifiers: apply!(qualifiers, indent) >> (Feature {
             kind: kind,
-            pos: pos,
+            location: location,
             qualifiers: qualifiers,
         })
     )
@@ -620,27 +620,27 @@ named!(
     do_parse!(features_header >> features: many0!(feature) >> (features))
 );
 
-// Feature positions
+// Feature locations
 
 named!(
-    pos_single<CompleteByteSlice, Position>,
-    map!(numeric_i64!(), |i| Position::Single(i - 1)) // Convert from 1-based
+    pos_single<CompleteByteSlice, Location>,
+    map!(numeric_i64!(), |i| Location::Single(i - 1)) // Convert from 1-based
 ); // to 0-based
 
 named!(
-    pos_between<CompleteByteSlice, Position>,
+    pos_between<CompleteByteSlice, Location>,
     map_res!(
         separated_pair!(numeric_i64!(), tag!("^"), numeric_i64!()),
-        |(a, b): (i64, i64)| -> Result<Position, String> {
+        |(a, b): (i64, i64)| -> Result<Location, String> {
             // This check is not 100% foolproof, because if b == 1, a must be
             // the last nt of a circular sequence, but since we might not yet
             // know the sequence length, we can't check this yet
             if (a - b).abs() == 1 || ((a == 1) ^ (b == 1))
             {
-                Ok(Position::Between(a - 1, b - 1))
+                Ok(Location::Between(a - 1, b - 1))
             } else {
                 Err(format!(
-                    "Invalid position, coordinates separated by ^ must be adjacent"
+                    "Invalid location, coordinates separated by ^ must be adjacent"
                 ))
             }
         }
@@ -649,14 +649,14 @@ named!(
 
 // A range x..y
 named!(
-    pos_span<CompleteByteSlice, Position>,
+    pos_span<CompleteByteSlice, Location>,
     do_parse!(
         before: opt!(char!('<')) >>
         a: numeric_i64!() >>
         tag!("..") >>
         after: opt!(char!('>')) >>
         b: numeric_i64!() >>
-        (Position::Span((a - 1, Before(before.is_some())), (b - 1, After(after.is_some()))))
+        (Location::Span((a - 1, Before(before.is_some())), (b - 1, After(after.is_some()))))
     )
 );
 
@@ -665,31 +665,31 @@ macro_rules! compound_pos {
         do_parse!(
             $i,
             tag!($tag)
-                >> positions:
-                    delimited!(tag!("("), separated_list!(tag!(","), position), tag!(")"))
-                >> (Position::$kind(positions))
+                >> locations:
+                    delimited!(tag!("("), separated_list!(tag!(","), location), tag!(")"))
+                >> (Location::$kind(locations))
         )
     };
 }
 
-named!(pos_join<CompleteByteSlice, Position>, compound_pos!(Join, "join"));
-named!(pos_order<CompleteByteSlice, Position>, compound_pos!(Order, "order"));
-named!(pos_bond<CompleteByteSlice, Position>, compound_pos!(Bond, "bond"));
-named!(pos_oneof<CompleteByteSlice, Position>, compound_pos!(OneOf, "one-of"));
+named!(pos_join<CompleteByteSlice, Location>, compound_pos!(Join, "join"));
+named!(pos_order<CompleteByteSlice, Location>, compound_pos!(Order, "order"));
+named!(pos_bond<CompleteByteSlice, Location>, compound_pos!(Bond, "bond"));
+named!(pos_oneof<CompleteByteSlice, Location>, compound_pos!(OneOf, "one-of"));
 
 named!(
-    pos_complement<CompleteByteSlice, Position>,
+    pos_complement<CompleteByteSlice, Location>,
     do_parse!(
-        tag!("complement") >> position: delimited!(tag!("("), position, tag!(")"))
-            >> (Position::Complement(Box::new(position)))
+        tag!("complement") >> location: delimited!(tag!("("), location, tag!(")"))
+            >> (Location::Complement(Box::new(location)))
     )
 );
 
 named!(
-    pos_external<CompleteByteSlice, Position>,
+    pos_external<CompleteByteSlice, Location>,
     do_parse!(
         accession: to_str!(map!(is_not!(": \t\r\n"), |x| x.0)) // convert to &[u8]
-            >> pos:
+            >> location:
                 opt!(preceded!(
                     tag!(":"),
                     alt_complete!(
@@ -698,19 +698,19 @@ named!(
                         pos_between | pos_single | pos_gap | 
                         pos_order | pos_oneof | pos_bond
                     )
-                )) >> (Position::External(accession.to_owned(), pos.map(Box::new)))
+                )) >> (Location::External(accession.to_owned(), location.map(Box::new)))
     )
 );
 
 // This is probably only legal in a CONTIG field, but then again, who knows, it
 // can't hurt to accept it everywhere
 named!(
-    pos_gap<CompleteByteSlice, Position>,
-    do_parse!(tag!("gap(") >> size: opt!(numeric_i64!()) >> tag!(")") >> (Position::Gap(size)))
+    pos_gap<CompleteByteSlice, Location>,
+    do_parse!(tag!("gap(") >> size: opt!(numeric_i64!()) >> tag!(")") >> (Location::Gap(size)))
 );
 
 named!(
-    position<CompleteByteSlice, Position>,
+    location<CompleteByteSlice, Location>,
     // Order is important here, `pos_single` eats the first number in a
     // range otherwise
     alt_complete!(
@@ -723,11 +723,11 @@ named!(
 // CONTIG
 
 named!(
-    pub contig_text<Position>,
+    pub contig_text<Location>,
     map_res_custom_error!(
-        NomParserError::Position,
+        NomParserError::Location,
         apply!(field_bytes, 0, "CONTIG", false),
-        |r: Vec<u8>| match position(CompleteByteSlice(&r)) {
+        |r: Vec<u8>| match location(CompleteByteSlice(&r)) {
             Ok((_, p)) => Ok(p), // TODO: Check we're matching the whole input
             Err(e) => Err(format!("{:?}", e)) // TODO: Pass this error on once
                                               // we have proper custom errors
@@ -966,10 +966,10 @@ mod test {
     #[test]
     fn test_pos_single() {
         let s = "1\n";
-        let p = position(CompleteByteSlice(s.as_bytes()));
+        let p = location(CompleteByteSlice(s.as_bytes()));
         match p {
             Ok((_, p)) => match p {
-                Position::Single(0) => {}
+                Location::Single(0) => {}
                 x => {
                     panic!("{:?}", x);
                 }
@@ -984,10 +984,10 @@ mod test {
     fn test_pos_join() {
         let s = "join(1,3)";
         let p = pos_join(CompleteByteSlice(s.as_bytes()));
-        let inner = vec![Position::Single(0), Position::Single(2)];
+        let inner = vec![Location::Single(0), Location::Single(2)];
         assert_eq!(
             p,
-            Ok(((CompleteByteSlice(&b""[..])), Position::Join(inner)))
+            Ok(((CompleteByteSlice(&b""[..])), Location::Join(inner)))
         );
     }
 

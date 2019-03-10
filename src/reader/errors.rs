@@ -10,7 +10,7 @@ use std::fmt;
 pub enum NomParserError {
     Utf8Error,
     Date,
-    Position,
+    Location,
     SequenceLength,
     Unknown,
 }
@@ -26,7 +26,7 @@ impl From<u32> for NomParserError {
         match i {
             0 => NomParserError::Utf8Error,
             1 => NomParserError::Date,
-            2 => NomParserError::Position,
+            2 => NomParserError::Location,
             3 => NomParserError::SequenceLength,
             _ => NomParserError::Unknown,
         }
@@ -38,7 +38,7 @@ impl fmt::Display for NomParserError {
         let msg = match *self {
             NomParserError::Utf8Error => "Invalid UTF-8 encountered",
             NomParserError::Date => "Invalid date format",
-            NomParserError::Position => "Failed parsing position specifier",
+            NomParserError::Location => "Failed parsing location specifier",
             NomParserError::SequenceLength => {
                 "Sequence length didn't match value specified by LOCUS line"
             }

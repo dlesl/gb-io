@@ -71,110 +71,110 @@ pub struct Before(pub bool);
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct After(pub bool);
 
-/// Represents a Genbank "position", used to specify the location of
+/// Represents a Genbank "location", used to specify the location of
 /// features and in the CONTIG line. See
 /// <http://www.insdc.org/files/feature_table.html> for a detailed
 /// description of what they mean.
 ///
-/// Note that positions specified here must always refer to a
+/// Note that locations specified here must always refer to a
 /// nucleotide within the sequence. Ranges are inclusive. To specify a
 /// range that wraps around, use join(x..last,1..y).
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
-pub enum Position {
+pub enum Location {
     /// Just a number
     Single(i64),
     /// n^n+1
     Between(i64, i64),
     /// [<]x..[>]y
     Span((i64, Before), (i64, After)),
-    Complement(Box<Position>),
-    Join(Vec<Position>),
-    Order(Vec<Position>),
-    Bond(Vec<Position>),
-    OneOf(Vec<Position>),
-    External(String, Option<Box<Position>>),
+    Complement(Box<Location>),
+    Join(Vec<Location>),
+    Order(Vec<Location>),
+    Bond(Vec<Location>),
+    OneOf(Vec<Location>),
+    External(String, Option<Box<Location>>),
     Gap(Option<i64>),
 }
 
 #[derive(Debug, Fail, PartialEq)]
-pub enum PositionError {
-    #[fail(display = "Can't determine position due to ambiguity: {}", _0)]
-    Ambiguous(Position),
-    #[fail(display = "Can't resolve external position: {}", _0)]
-    External(Position),
+pub enum LocationError {
+    #[fail(display = "Can't determine location due to ambiguity: {}", _0)]
+    Ambiguous(Location),
+    #[fail(display = "Can't resolve external location: {}", _0)]
+    External(Location),
     #[fail(display = "Recursion limit reached while processing: {}", _0)]
-    Recursion(Position),
+    Recursion(Location),
     // TODO: actually implement this
-    #[fail(display = "Empty position list encountered")]
+    #[fail(display = "Empty location list encountered")]
     Empty,
     #[fail(
-        display = "Position refers to a location outside of the sequence: {}",
+        display = "Location refers to a location outside of the sequence: {}",
         _0
     )]
-    OutOfBounds(Position),
+    OutOfBounds(Location),
 }
 
-impl Position {
+impl Location {
     /// Convenience constructor for this commonly used variant
-    pub fn simple_span(a: i64, b: i64) -> Position {
-        Position::Span((a, Before(false)), (b, After(false)))
+    pub fn simple_span(a: i64, b: i64) -> Location {
+        Location::Span((a, Before(false)), (b, After(false)))
     }
 
-    /// Try to get the outermost bounds for a position. Returns the
-    /// starting and finishing positions, as inclusive sequence
+    /// Try to get the outermost bounds for a location. Returns the
+    /// starting and finishing locations, as inclusive sequence
     /// coordinates.
-    pub fn find_bounds(&self) -> Result<(i64, i64), PositionError> {
+    pub fn find_bounds(&self) -> Result<(i64, i64), LocationError> {
         match *self {
-            Position::Span((a, _), (b, _)) => Ok((a, b)),
-            Position::Complement(ref position) => position.find_bounds(),
-            Position::Join(ref positions) => {
-                let first = positions.first().ok_or(PositionError::Empty)?;
-                let last = positions.last().unwrap();
+            Location::Span((a, _), (b, _)) => Ok((a, b)),
+            Location::Complement(ref location) => location.find_bounds(),
+            Location::Join(ref locations) => {
+                let first = locations.first().ok_or(LocationError::Empty)?;
+                let last = locations.last().unwrap();
                 let (start, _) = first.find_bounds()?;
                 let (_, end) = last.find_bounds()?;
                 Ok((start, end))
             }
-            Position::Single(p) => Ok((p, p)),
-            Position::Between(a, b) => Ok((a, b)),
-            Position::Order(ref positions)
-            | Position::Bond(ref positions)
-            | Position::OneOf(ref positions) => {
-                let (left, right): (Vec<_>, Vec<_>) = positions
+            Location::Single(p) => Ok((p, p)),
+            Location::Between(a, b) => Ok((a, b)),
+            Location::Order(ref locations)
+            | Location::Bond(ref locations)
+            | Location::OneOf(ref locations) => {
+                let (left, right): (Vec<_>, Vec<_>) = locations
                     .iter()
-                    .flat_map(Position::find_bounds) // This skips any Err values
+                    .flat_map(Location::find_bounds) // This skips any Err values
                     .unzip();
-                let min = left.into_iter().min().ok_or(PositionError::Empty)?;
+                let min = left.into_iter().min().ok_or(LocationError::Empty)?;
                 let max = right.into_iter().max().unwrap();
                 Ok((min, max))
             }
-            ref p => Err(PositionError::Ambiguous(p.clone())),
+            ref p => Err(LocationError::Ambiguous(p.clone())),
         }
     }
 
     // Only returns `Err` if one of the closures does
-    fn transform<P, V>(self, pos: &P, val: &V) -> Result<Position, PositionError>
+    fn transform<L, V>(self, loc: &L, val: &V) -> Result<Location, LocationError>
     where
-        P: Fn(Position) -> Result<Position, PositionError>,
-        V: Fn(i64) -> Result<i64, PositionError>,
+        L: Fn(Location) -> Result<Location, LocationError>,
+        V: Fn(i64) -> Result<i64, LocationError>,
     {
-        pos(self)?.transform_impl(pos, val)
+        loc(self)?.transform_impl(loc, val)
     }
 
-    fn transform_impl<P, V>(self, pos: &P, val: &V) -> Result<Position, PositionError>
+    fn transform_impl<L, V>(self, loc: &L, val: &V) -> Result<Location, LocationError>
     where
-        P: Fn(Position) -> Result<Position, PositionError>,
-        V: Fn(i64) -> Result<i64, PositionError>,
+        L: Fn(Location) -> Result<Location, LocationError>,
+        V: Fn(i64) -> Result<i64, LocationError>,
     {
-        use Position::*;
-        let t_vec = |ps: Vec<Position>| {
+        use Location::*;
+        let t_vec = |ps: Vec<Location>| {
             ps.into_iter()
-                .map(|p| pos(p)?.transform_impl(pos, val))
+                .map(|p| loc(p)?.transform_impl(loc, val))
                 .collect::<Result<Vec<_>, _>>()
         };
         let res = match self {
-            // Apply the position closure
-            Complement(p) => Complement(Box::new(pos(*p)?.transform_impl(pos, val)?)),
+            // Apply the location closure
+            Complement(p) => Complement(Box::new(loc(*p)?.transform_impl(loc, val)?)),
             Order(ps) => Order(t_vec(ps)?),
             Bond(ps) => Bond(t_vec(ps)?),
             OneOf(ps) => OneOf(t_vec(ps)?),
@@ -190,12 +190,12 @@ impl Position {
         Ok(res)
     }
 
-    /// Truncates this position, limiting it to the given bounds.
+    /// Truncates this location, limiting it to the given bounds.
     /// Note: `higher` is exclusive.
-    /// `None` is returned if no part of the position lies within the bounds.
-    pub fn truncate(&self, start: i64, end: i64) -> Option<Position> {
-        use Position::*;
-        let filter = |ps: &[Position]| {
+    /// `None` is returned if no part of the location lies within the bounds.
+    pub fn truncate(&self, start: i64, end: i64) -> Option<Location> {
+        use Location::*;
+        let filter = |ps: &[Location]| {
             let res: Vec<_> = ps.iter().filter_map(|p| p.truncate(start, end)).collect();
             if res.is_empty() {
                 None
@@ -228,9 +228,9 @@ impl Position {
                         Some(simplify_shallow(Span((start, Before(false)), (b, after))).unwrap())
                     } // TODO
                     (false, false) => {
-                        // does the position span (start, end)?
+                        // does the location span (start, end)?
                         if a <= start && b >= end - 1 {
-                            Some(simplify_shallow(Position::simple_span(start, end - 1)).unwrap()) // TODO
+                            Some(simplify_shallow(Location::simple_span(start, end - 1)).unwrap()) // TODO
                         } else {
                             None
                         }
@@ -247,37 +247,37 @@ impl Position {
     }
 
     pub fn to_gb_format(&self) -> String {
-        fn position_list(positions: &[Position]) -> String {
-            positions
+        fn location_list(locations: &[Location]) -> String {
+            locations
                 .iter()
-                .map(Position::to_gb_format)
+                .map(Location::to_gb_format)
                 .collect::<Vec<_>>()
                 .join(",")
         }
         match *self {
-            Position::Single(p) => format!("{}", p + 1),
-            Position::Between(a, b) => format!("{}^{}", a + 1, b + 1),
-            Position::Span((a, Before(before)), (b, After(after))) => {
+            Location::Single(p) => format!("{}", p + 1),
+            Location::Between(a, b) => format!("{}^{}", a + 1, b + 1),
+            Location::Span((a, Before(before)), (b, After(after))) => {
                 let before = if before { "<" } else { "" };
                 let after = if after { ">" } else { "" };
                 format!("{}{}..{}{}", before, a + 1, after, b + 1)
             }
-            Position::Complement(ref p) => format!("complement({})", p.to_gb_format()),
-            Position::Join(ref positions) => format!("join({})", position_list(positions)),
-            Position::Order(ref positions) => format!("order({})", position_list(positions)),
-            Position::Bond(ref positions) => format!("bond({})", position_list(positions)),
-            Position::OneOf(ref positions) => format!("one-of({})", position_list(positions)),
-            Position::External(ref name, Some(ref pos)) => {
-                format!("{}:{}", &name, pos.to_gb_format())
+            Location::Complement(ref p) => format!("complement({})", p.to_gb_format()),
+            Location::Join(ref locations) => format!("join({})", location_list(locations)),
+            Location::Order(ref locations) => format!("order({})", location_list(locations)),
+            Location::Bond(ref locations) => format!("bond({})", location_list(locations)),
+            Location::OneOf(ref locations) => format!("one-of({})", location_list(locations)),
+            Location::External(ref name, Some(ref location)) => {
+                format!("{}:{}", &name, location.to_gb_format())
             }
-            Position::External(ref name, None) => format!("{}", name),
-            Position::Gap(Some(length)) => format!("gap({})", length),
-            Position::Gap(None) => format!("gap()"),
+            Location::External(ref name, None) => format!("{}", name),
+            Location::Gap(Some(length)) => format!("gap({})", length),
+            Location::Gap(None) => format!("gap()"),
         }
     }
 }
 
-impl fmt::Display for Position {
+impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.to_gb_format())
     }
@@ -290,7 +290,7 @@ impl fmt::Display for Position {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Feature {
     pub kind: FeatureKind,
-    pub pos: Position,
+    pub location: Location,
     pub qualifiers: Vec<(QualifierKey, Option<String>)>,
 }
 
@@ -372,7 +372,7 @@ pub struct Seq {
     pub references: Vec<Reference>,
     pub comments: Vec<String>,
     pub seq: Vec<u8>,
-    pub contig: Option<Position>,
+    pub contig: Option<Location>,
     pub features: Vec<Feature>,
 }
 
@@ -411,7 +411,7 @@ impl Seq {
     /// equal to self.seq.len(), in the following circumstances:
     /// - `self.seq` is empty and `self.contig` is not, and the corresponding
     /// file's LOCUS line specified a length. The returned value is i64 to
-    /// simplifiy arithmetic with coords from `Position`
+    /// simplifiy arithmetic with coords from `Location`
     pub fn len(&self) -> i64 {
         if let Some(len) = self.len {
             assert!(self.seq.is_empty() || len == self.seq.len());
@@ -465,42 +465,42 @@ impl Seq {
             }
         }
     }
-    /// Given a range on this sequence, returns a corresponding `Position`
+    /// Given a range on this sequence, returns a corresponding `Location`
     /// Note: this is a rust-style, exclusive range
-    pub fn range_to_position(&self, start: i64, end: i64) -> Position {
+    pub fn range_to_location(&self, start: i64, end: i64) -> Location {
         match self.topology {
             Topology::Linear => {
                 if start + 1 == end {
-                    Position::Single(start)
+                    Location::Single(start)
                 } else {
-                    Position::simple_span(start, end - 1)
+                    Location::simple_span(start, end - 1)
                 }
             }
             Topology::Circular => {
                 let (start, end) = self.unwrap_range(start, end);
                 if end > self.len() {
                     assert!(end < self.len() * 2, "Range wraps around more than once!");
-                    Position::Join(vec![
-                        Position::simple_span(start, self.len() - 1),
-                        Position::simple_span(0, end - self.len() - 1),
+                    Location::Join(vec![
+                        Location::simple_span(start, self.len() - 1),
+                        Location::simple_span(0, end - self.len() - 1),
                     ])
                 } else if start == end {
-                    Position::Single(start)
+                    Location::Single(start)
                 } else {
-                    Position::simple_span(start, end - 1)
+                    Location::simple_span(start, end - 1)
                 }
             }
         }
     }
-    /// "Unwraps" a position on a circular sequence, so that coordinates that
-    /// span the origin are replaced with positions beyond the origin.
-    pub fn unwrap_position(&self, p: Position) -> Result<Position, PositionError> {
+    /// "Unwraps" a location on a circular sequence, so that coordinates that
+    /// span the origin are replaced with locations beyond the origin.
+    pub fn unwrap_location(&self, p: Location) -> Result<Location, LocationError> {
         let (first, last) = p.find_bounds()?;
         if first < 0 || last >= self.len() {
-            return Err(PositionError::OutOfBounds(p));
+            return Err(LocationError::OutOfBounds(p));
         }
         if last < first && !self.is_circular() {
-            return Err(PositionError::OutOfBounds(p));
+            return Err(LocationError::OutOfBounds(p));
         }
         let len = self.len();
         p.transform(&|p| Ok(p), &|v| {
@@ -509,10 +509,10 @@ impl Seq {
         })
     }
 
-    /// "Wraps" a position on a circular sequence, so that coordinates that
+    /// "Wraps" a location on a circular sequence, so that coordinates that
     /// extend beyond the end of the sequence are are wrapped to the origin.
-    pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
-        use Position::*;
+    pub fn wrap_location(&self, p: Location) -> Result<Location, LocationError> {
+        use Location::*;
         let res = p
             .transform(
                 &|p| {
@@ -550,22 +550,22 @@ impl Seq {
     /// "Shifts" a feature forwards by `shift` NTs (can be negative)
     /// Note: If this fails you won't get the original `Feature`
     /// back. If this is important, you should clone first
-    pub fn relocate_feature(&self, f: Feature, shift: i64) -> Result<Feature, PositionError> {
+    pub fn relocate_feature(&self, f: Feature, shift: i64) -> Result<Feature, LocationError> {
         let res = Feature {
-            pos: self.relocate_position(f.pos, shift)?,
+            location: self.relocate_location(f.location, shift)?,
             ..f
         };
         Ok(res)
     }
 
-    /// "Shifts" a position forwards by `shift` NTs (can be negative)
-    /// Note: If this fails you won't get the original `Position`
+    /// "Shifts" a location forwards by `shift` NTs (can be negative)
+    /// Note: If this fails you won't get the original `Location`
     /// back. If this is important, you should clone first
-    pub fn relocate_position(
+    pub fn relocate_location(
         &self,
-        p: Position,
+        p: Location,
         mut shift: i64,
-    ) -> Result<Position, PositionError> {
+    ) -> Result<Location, LocationError> {
         if self.is_circular() {
             while shift < 0 {
                 shift += self.len();
@@ -574,31 +574,31 @@ impl Seq {
                 shift -= self.len();
             }
             let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap(); // can't fail
-            self.wrap_position(moved)
+            self.wrap_location(moved)
         } else {
             p.transform(&|p| Ok(p), &|v| Ok(v + shift))
         }
     }
 
     /// Used by `revcomp`
-    fn revcomp_position(&self, p: Position) -> Position {
+    fn revcomp_location(&self, p: Location) -> Location {
         let p = p
             .transform(
                 &|mut p| {
                     match p {
-                        Position::Join(ref mut positions)
-                        | Position::Order(ref mut positions)
-                        | Position::Bond(ref mut positions)
-                        | Position::OneOf(ref mut positions) => {
-                            positions.reverse();
+                        Location::Join(ref mut locations)
+                        | Location::Order(ref mut locations)
+                        | Location::Bond(ref mut locations)
+                        | Location::OneOf(ref mut locations) => {
+                            locations.reverse();
                         }
                         _ => (),
                     };
                     let p = match p {
-                        Position::Span((a, Before(before)), (b, After(after))) => {
-                            Position::Span((b, Before(after)), (a, After(before)))
+                        Location::Span((a, Before(before)), (b, After(after))) => {
+                            Location::Span((b, Before(after)), (a, After(before)))
                         }
-                        Position::Between(a, b) => Position::Between(b, a),
+                        Location::Between(a, b) => Location::Between(b, a),
                         p => p,
                     };
                     Ok(p)
@@ -607,8 +607,8 @@ impl Seq {
             )
             .unwrap(); // can't fail
         match p {
-            Position::Complement(x) => *x,
-            x => Position::Complement(Box::new(x)),
+            Location::Complement(x) => *x,
+            x => Location::Complement(Box::new(x)),
         }
     }
 
@@ -616,7 +616,7 @@ impl Seq {
     /// back. If this is important, you should clone first
     pub fn revcomp_feature(&self, f: Feature) -> Feature {
         Feature {
-            pos: self.revcomp_position(f.pos),
+            location: self.revcomp_location(f.location),
             ..f
         }
     }
@@ -674,11 +674,11 @@ impl Seq {
         let shift = -start;
         let mut features = Vec::new();
         for f in &self.features {
-            if let Ok((x, y)) = f.pos.find_bounds() {
+            if let Ok((x, y)) = f.location.find_bounds() {
                 if (x < 0 || y < 0 || x > self.len() || y > self.len())
                     || (!self.is_circular() && y < x)
                 {
-                    warn!("Skipping feature with invalid position: {}", f.pos);
+                    warn!("Skipping feature with invalid location: {}", f.location);
                     continue;
                 }
                 let (mut x, mut y) = self.unwrap_range(x, y + 1); // to exclusive
@@ -690,7 +690,7 @@ impl Seq {
                 if x >= start && y < end {
                     match self.relocate_feature(f.clone(), shift) {
                         Ok(f) => features.push(f),
-                        Err(e) => warn!("Skipping feature with tricky position: {}", e),
+                        Err(e) => warn!("Skipping feature with tricky location: {}", e),
                     }
                 }
             }
@@ -717,17 +717,17 @@ impl Seq {
             }
         }
         let mut features = Vec::new();
-        let mut process_feature = |f: &Feature| -> Result<(), PositionError> {
-            let (x, y) = f.pos.find_bounds()?;
+        let mut process_feature = |f: &Feature| -> Result<(), LocationError> {
+            let (x, y) = f.location.find_bounds()?;
             if (x < 0 || y < 0 || x > self.len() || y > self.len())
                 || (!self.is_circular() && y < x)
             {
-                return Err(PositionError::OutOfBounds(f.pos.clone()));
+                return Err(LocationError::OutOfBounds(f.location.clone()));
             }
-            let relocated = self.relocate_position(f.pos.clone(), shift)?;
+            let relocated = self.relocate_location(f.location.clone(), shift)?;
             if let Some(truncated) = relocated.truncate(0, end - start) {
                 features.push(Feature {
-                    pos: truncated,
+                    location: truncated,
                     ..f.clone()
                 });
             }
@@ -735,7 +735,7 @@ impl Seq {
         };
         for f in &self.features {
             if let Err(e) = process_feature(f) {
-                warn!("Skipping feature with tricky position: {}", e);
+                warn!("Skipping feature with tricky location: {}", e);
             }
         }
         Seq {
@@ -767,16 +767,16 @@ impl Seq {
     }
 }
 
-//TODO: should we merge adjacent positions when Before/After is set?
-fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
-    use Position::*;
-    let mut res: Vec<Position> = Vec::with_capacity(ps.len());
+//TODO: should we merge adjacent locations when Before/After is set?
+fn merge_adjacent(ps: Vec<Location>) -> Vec<Location> {
+    use Location::*;
+    let mut res: Vec<Location> = Vec::with_capacity(ps.len());
     for p in ps {
         if let Some(last) = res.last_mut() {
             match (&last, p) {
                 (Single(ref a), Single(b)) => {
                     if *a + 1 == b {
-                        *last = Position::simple_span(*a, b);
+                        *last = Location::simple_span(*a, b);
                     } else if *a != b {
                         // ie. join(1,1) (can this happen?)
                         res.push(Single(b));
@@ -812,11 +812,11 @@ fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
     res
 }
 
-fn flatten_join(v: Vec<Position>) -> Vec<Position> {
+fn flatten_join(v: Vec<Location>) -> Vec<Location> {
     let mut res = Vec::with_capacity(v.len());
     for p in v {
         match p {
-            Position::Join(xs) => res.extend(flatten_join(xs)),
+            Location::Join(xs) => res.extend(flatten_join(xs)),
             p => res.push(p),
         }
     }
@@ -824,23 +824,23 @@ fn flatten_join(v: Vec<Position>) -> Vec<Position> {
 }
 
 /// This doesn't simplify everything yet...
-/// TODO: return original Position somehow on failure
-fn simplify(p: Position) -> Result<Position, PositionError> {
+/// TODO: return original Location somehow on failure
+fn simplify(p: Location) -> Result<Location, LocationError> {
     p.transform(&simplify_shallow, &|v| Ok(v))
 }
 
-fn simplify_shallow(p: Position) -> Result<Position, PositionError> {
-    use Position::*;
+fn simplify_shallow(p: Location) -> Result<Location, LocationError> {
+    use Location::*;
     match p {
         Join(xs) => {
             if xs.is_empty() {
-                return Err(PositionError::Empty);
+                return Err(LocationError::Empty);
             }
             let xs = flatten_join(xs);
             let mut xs = merge_adjacent(xs);
             assert!(!xs.is_empty());
             if xs.len() == 1 {
-                // remove the join, we now have a new type of position
+                // remove the join, we now have a new type of location
                 // so we need to simplify again
                 Ok(simplify_shallow(xs.pop().unwrap())?)
             } else {
@@ -859,37 +859,37 @@ mod test {
 
     #[test]
     fn test_merge_adj() {
-        use Position::*;
+        use Location::*;
         assert_eq!(
             merge_adjacent(vec![
-                Position::simple_span(0, 3),
-                Position::simple_span(5, 7),
+                Location::simple_span(0, 3),
+                Location::simple_span(5, 7),
             ]),
-            vec![Position::simple_span(0, 3), Position::simple_span(5, 7)]
+            vec![Location::simple_span(0, 3), Location::simple_span(5, 7)]
         );
         assert_eq!(
             merge_adjacent(vec![
-                Position::simple_span(0, 4),
-                Position::simple_span(5, 7),
+                Location::simple_span(0, 4),
+                Location::simple_span(5, 7),
             ]),
-            vec![Position::simple_span(0, 7)]
+            vec![Location::simple_span(0, 7)]
         );
         assert_eq!(
-            merge_adjacent(vec![Position::simple_span(0, 4), Position::Single(5)]),
-            vec![Position::simple_span(0, 5)]
+            merge_adjacent(vec![Location::simple_span(0, 4), Location::Single(5)]),
+            vec![Location::simple_span(0, 5)]
         );
         assert_eq!(
-            merge_adjacent(vec![Single(0), Position::simple_span(1, 5)]),
-            vec![Position::simple_span(0, 5)]
+            merge_adjacent(vec![Single(0), Location::simple_span(1, 5)]),
+            vec![Location::simple_span(0, 5)]
         );
         assert_eq!(
             merge_adjacent(vec![Single(0), Single(1)]),
-            vec![Position::simple_span(0, 1)]
+            vec![Location::simple_span(0, 1)]
         );
         assert_eq!(
             &Join(merge_adjacent(vec![
-                Position::Span((1, Before(true)), (2, After(false))),
-                Position::Span((3, Before(false)), (4, After(true)))
+                Location::Span((1, Before(true)), (2, After(false))),
+                Location::Span((3, Before(false)), (4, After(true)))
             ]))
             .to_gb_format(),
             "join(<2..>5)"
@@ -904,43 +904,43 @@ mod test {
             ..Seq::empty()
         };
         assert_eq!(
-            s.relocate_position(Position::Single(5), -9),
-            Ok(Position::Single(6))
+            s.relocate_location(Location::Single(5), -9),
+            Ok(Location::Single(6))
         );
-        let span1 = Position::simple_span(7, 9);
-        let span2 = Position::simple_span(0, 3);
+        let span1 = Location::simple_span(7, 9);
+        let span2 = Location::simple_span(0, 3);
         assert_eq!(span1.to_gb_format(), String::from("8..10"));
-        let join = Position::Join(vec![span1, span2]);
+        let join = Location::Join(vec![span1, span2]);
         assert_eq!(
-            s.relocate_position(join, -5).unwrap().to_gb_format(),
+            s.relocate_location(join, -5).unwrap().to_gb_format(),
             String::from("3..9")
         );
     }
 
     #[test]
-    fn relocate_position() {
+    fn relocate_location() {
         let s = Seq {
             seq: b"0123456789".to_vec(),
             topology: Topology::Circular,
             ..Seq::empty()
         };
         assert_eq!(
-            &s.relocate_position(Position::simple_span(0, 9), 5)
+            &s.relocate_location(Location::simple_span(0, 9), 5)
                 .unwrap()
                 .to_gb_format(),
             "join(6..10,1..5)"
         );
         assert_eq!(
-            &s.relocate_position(Position::simple_span(5, 7), 5)
+            &s.relocate_location(Location::simple_span(5, 7), 5)
                 .unwrap()
                 .to_gb_format(),
             "1..3"
         );
         assert_eq!(
-            &s.relocate_position(
-                Position::Join(vec![
-                    Position::simple_span(7, 9),
-                    Position::simple_span(0, 2)
+            &s.relocate_location(
+                Location::Join(vec![
+                    Location::simple_span(7, 9),
+                    Location::simple_span(0, 2)
                 ]),
                 2
             )
@@ -949,10 +949,10 @@ mod test {
             "join(10,1..5)"
         );
         assert_eq!(
-            &s.relocate_position(
-                Position::Join(vec![
-                    Position::simple_span(8, 9),
-                    Position::simple_span(0, 1)
+            &s.relocate_location(
+                Location::Join(vec![
+                    Location::simple_span(8, 9),
+                    Location::simple_span(0, 1)
                 ]),
                 2
             )
@@ -961,20 +961,20 @@ mod test {
             "1..4"
         );
         assert_eq!(
-            &s.relocate_position(Position::simple_span(0, 2), 5)
+            &s.relocate_location(Location::simple_span(0, 2), 5)
                 .unwrap()
                 .to_gb_format(),
             "6..8"
         );
         assert_eq!(
-            s.relocate_position(Position::Single(5), -9).unwrap(),
-            Position::Single(6)
+            s.relocate_location(Location::Single(5), -9).unwrap(),
+            Location::Single(6)
         );
-        let span1 = Position::simple_span(7, 9);
-        let span2 = Position::simple_span(0, 3);
-        let join = Position::Join(vec![span1, span2]);
+        let span1 = Location::simple_span(7, 9);
+        let span2 = Location::simple_span(0, 3);
+        let join = Location::Join(vec![span1, span2]);
         assert_eq!(
-            &s.relocate_position(join, -5).unwrap().to_gb_format(),
+            &s.relocate_location(join, -5).unwrap().to_gb_format(),
             "3..9"
         );
     }
@@ -1013,19 +1013,19 @@ mod test {
         use std::iter::repeat;
         let mut features = Vec::new();
         for i in 0..8 {
-            let pos = Position::simple_span(i, i + 2);
+            let location = Location::simple_span(i, i + 2);
             features.push(Feature {
                 // this _is_ inclusive
-                pos: pos.clone(),
-                kind: FeatureKind::from(format!("{}", pos)),
+                location: location.clone(),
+                kind: FeatureKind::from(format!("{}", location)),
                 qualifiers: vec![],
             });
         }
         for i in 8..10 {
             features.push(Feature {
-                pos: Position::Join(vec![
-                    Position::simple_span(i, 9),
-                    Position::simple_span(0, i - 8),
+                location: Location::Join(vec![
+                    Location::simple_span(i, 9),
+                    Location::simple_span(0, i - 8),
                 ]),
                 kind: FeatureKind::from(format!("{}", i)),
                 qualifiers: Vec::new(),
@@ -1050,17 +1050,17 @@ mod test {
             let reg = s.extract_range_no_truncation(i, i + 3);
             assert_eq!(reg.features.len(), 1);
             println!(
-                "{}, original pos {}, current pos {}",
-                i, reg.features[0].kind, reg.features[0].pos
+                "{}, original location {}, current location {}",
+                i, reg.features[0].kind, reg.features[0].location
             );
-            assert_eq!(reg.features[0].pos, Position::simple_span(0, 2));
+            assert_eq!(reg.features[0].location, Location::simple_span(0, 2));
         }
     }
 
     #[test]
     fn test_extract_linear() {
         let features = vec![Feature {
-            pos: Position::simple_span(0, 99),
+            location: Location::simple_span(0, 99),
             kind: FeatureKind::from(""),
             qualifiers: Vec::new(),
         }];
@@ -1075,8 +1075,8 @@ mod test {
                 let res = s.extract_range(i, i + j);
                 assert_eq!(res.features.len(), 1);
                 assert_eq!(
-                    res.features[0].pos,
-                    simplify(Position::simple_span(0, j - 1)).unwrap()
+                    res.features[0].location,
+                    simplify(Location::simple_span(0, j - 1)).unwrap()
                 );
             }
         }
@@ -1085,18 +1085,18 @@ mod test {
     #[test]
     fn test_extract_circular() {
         let whole_seq = Feature {
-            pos: Position::simple_span(0, 9),
+            location: Location::simple_span(0, 9),
             kind: FeatureKind::from(""),
             qualifiers: Vec::new(),
         };
-        let make_pos = |from: i64, to: i64| -> Position {
+        let make_pos = |from: i64, to: i64| -> Location {
             if to >= 10 {
-                Position::Join(vec![
-                    simplify(Position::simple_span(from, 9)).unwrap(),
-                    simplify(Position::simple_span(0, to - 10)).unwrap(),
+                Location::Join(vec![
+                    simplify(Location::simple_span(from, 9)).unwrap(),
+                    simplify(Location::simple_span(0, to - 10)).unwrap(),
                 ])
             } else {
-                simplify(Position::simple_span(from, to)).unwrap()
+                simplify(Location::simple_span(from, to)).unwrap()
             }
         };
 
@@ -1108,7 +1108,7 @@ mod test {
                     features: vec![
                         whole_seq.clone(),
                         Feature {
-                            pos: make_pos(i, i + j - 1),
+                            location: make_pos(i, i + j - 1),
                             kind: FeatureKind::from(""),
                             qualifiers: Vec::new(),
                         },
@@ -1119,16 +1119,16 @@ mod test {
                 assert_eq!(res.features.len(), 2);
                 if i < 8 {
                     assert_eq!(
-                        res.features[0].pos,
-                        simplify(Position::simple_span(0, j - 1)).unwrap()
+                        res.features[0].location,
+                        simplify(Location::simple_span(0, j - 1)).unwrap()
                     );
                 }
                 println!("1 {:?}", res.features[0]);
                 println!("{} {}", i, j);
                 if i < 8 {
                     assert_eq!(
-                        res.features[1].pos,
-                        simplify(Position::simple_span(0, j - 1)).unwrap()
+                        res.features[1].location,
+                        simplify(Location::simple_span(0, j - 1)).unwrap()
                     );
                 }
                 println!("2 {:?}", res.features[1]);
@@ -1142,7 +1142,7 @@ mod test {
             topology: Topology::Circular,
             seq: (0..10).collect(),
             features: vec![Feature {
-                pos: Position::simple_span(0, 3),
+                location: Location::simple_span(0, 3),
                 kind: feature_kind!(""),
                 qualifiers: vec![],
             }],
@@ -1152,52 +1152,52 @@ mod test {
         assert_eq!(res.features, vec![]);
         let res = s.extract_range(0, 1);
         assert_eq!(res.features.len(), 1);
-        assert_eq!(&res.features[0].pos, &Position::Single(0));
+        assert_eq!(&res.features[0].location, &Location::Single(0));
         let res = s.extract_range(3, 4);
         assert_eq!(res.features.len(), 1);
-        assert_eq!(&res.features[0].pos, &Position::Single(0));
+        assert_eq!(&res.features[0].location, &Location::Single(0));
         let res = s.extract_range(0, 10);
-        assert_eq!(&res.features[0].pos, &Position::simple_span(0, 3));
+        assert_eq!(&res.features[0].location, &Location::simple_span(0, 3));
     }
 
     #[test]
     fn truncate() {
         assert_eq!(
-            Position::Single(0).truncate(0, 1),
-            Some(Position::Single(0))
+            Location::Single(0).truncate(0, 1),
+            Some(Location::Single(0))
         );
-        assert_eq!(Position::Single(0).truncate(1, 2), None);
+        assert_eq!(Location::Single(0).truncate(1, 2), None);
         assert_eq!(
-            Position::simple_span(0, 2).truncate(1, 2),
-            Some(Position::Single(1))
-        );
-        assert_eq!(
-            Position::simple_span(0, 1).truncate(0, 2),
-            Some(Position::simple_span(0, 1))
+            Location::simple_span(0, 2).truncate(1, 2),
+            Some(Location::Single(1))
         );
         assert_eq!(
-            Position::Complement(Box::new(Position::simple_span(0, 1))).truncate(0, 2),
-            Some(Position::Complement(Box::new(Position::simple_span(0, 1))))
+            Location::simple_span(0, 1).truncate(0, 2),
+            Some(Location::simple_span(0, 1))
         );
         assert_eq!(
-            Position::Complement(Box::new(Position::simple_span(0, 1))).truncate(10, 20),
+            Location::Complement(Box::new(Location::simple_span(0, 1))).truncate(0, 2),
+            Some(Location::Complement(Box::new(Location::simple_span(0, 1))))
+        );
+        assert_eq!(
+            Location::Complement(Box::new(Location::simple_span(0, 1))).truncate(10, 20),
             None
         );
-        assert_eq!(Position::simple_span(0, 1).truncate(3, 4), None);
-        let p = Position::Join(vec![
-            Position::simple_span(0, 2),
-            Position::simple_span(4, 6),
+        assert_eq!(Location::simple_span(0, 1).truncate(3, 4), None);
+        let p = Location::Join(vec![
+            Location::simple_span(0, 2),
+            Location::simple_span(4, 6),
         ]);
-        assert_eq!(p.truncate(0, 3), Some(Position::simple_span(0, 2)));
+        assert_eq!(p.truncate(0, 3), Some(Location::simple_span(0, 2)));
         assert_eq!(p.truncate(10, 30), None);
     }
 
     #[test]
     fn test_extract_circular_split() {
         let features = vec![Feature {
-            pos: Position::Join(vec![
-                Position::simple_span(0, 2),
-                Position::simple_span(4, 9),
+            location: Location::Join(vec![
+                Location::simple_span(0, 2),
+                Location::simple_span(4, 9),
             ]),
             kind: FeatureKind::from(""),
             qualifiers: Vec::new(),
@@ -1222,25 +1222,25 @@ mod test {
             seq: "0123456789".into(),
             features: vec![
                 Feature {
-                    pos: Position::simple_span(2, 6),
+                    location: Location::simple_span(2, 6),
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 },
                 Feature {
-                    pos: Position::simple_span(0, 9),
+                    location: Location::simple_span(0, 9),
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 },
                 Feature {
-                    pos: Position::Join(vec![
-                        Position::simple_span(7, 9),
-                        Position::simple_span(0, 3),
+                    location: Location::Join(vec![
+                        Location::simple_span(7, 9),
+                        Location::simple_span(0, 3),
                     ]),
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 },
                 Feature {
-                    pos: Position::Single(0),
+                    location: Location::Single(0),
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 },
@@ -1258,24 +1258,24 @@ mod test {
         }
     }
     #[test]
-    fn range_to_position() {
+    fn range_to_location() {
         let s = Seq {
             seq: "0123456789".into(),
             topology: Topology::Linear,
             ..Seq::empty()
         };
-        assert_eq!(s.range_to_position(0, 10), Position::simple_span(0, 9));
+        assert_eq!(s.range_to_location(0, 10), Location::simple_span(0, 9));
         let s = Seq {
             topology: Topology::Circular,
             ..s
         };
-        assert_eq!(s.range_to_position(5, 10), Position::simple_span(5, 9));
+        assert_eq!(s.range_to_location(5, 10), Location::simple_span(5, 9));
         assert_eq!(
-            s.range_to_position(5, 11).to_gb_format(),
+            s.range_to_location(5, 11).to_gb_format(),
             "join(6..10,1..1)"
         );
         assert_eq!(
-            s.range_to_position(5, 15).to_gb_format(),
+            s.range_to_location(5, 15).to_gb_format(),
             "join(6..10,1..5)"
         );
     }
@@ -1316,52 +1316,52 @@ mod test {
     }
 
     #[test]
-    fn unwrap_position() {
+    fn unwrap_location() {
         let mut s = Seq {
             seq: "0123456789".into(),
             topology: Topology::Linear,
             features: Vec::new(),
             ..Seq::empty()
         };
-        let pos = Position::simple_span(2, 4);
-        assert_eq!(s.unwrap_position(pos).unwrap(), Position::simple_span(2, 4));
+        let location = Location::simple_span(2, 4);
+        assert_eq!(s.unwrap_location(location).unwrap(), Location::simple_span(2, 4));
         s.topology = Topology::Circular;
-        let pos = Position::simple_span(7, 3);
+        let location = Location::simple_span(7, 3);
         assert_eq!(
-            s.unwrap_position(pos).unwrap(),
-            Position::simple_span(7, 13)
+            s.unwrap_location(location).unwrap(),
+            Location::simple_span(7, 13)
         )
     }
 
     #[test]
-    fn wrap_position() {
+    fn wrap_location() {
         let s = Seq {
             seq: (0..10).collect(),
             topology: Topology::Circular,
             ..Seq::empty()
         };
         assert_eq!(
-            Position::Single(0),
-            s.wrap_position(Position::Single(0)).unwrap()
+            Location::Single(0),
+            s.wrap_location(Location::Single(0)).unwrap()
         );
         assert_eq!(
-            Position::Single(0),
-            s.wrap_position(Position::Single(10)).unwrap()
+            Location::Single(0),
+            s.wrap_location(Location::Single(10)).unwrap()
         );
         assert_eq!(
-            Position::Single(1),
-            s.wrap_position(Position::Single(11)).unwrap()
+            Location::Single(1),
+            s.wrap_location(Location::Single(11)).unwrap()
         );
         assert_eq!(
-            Position::simple_span(0, 1),
-            s.wrap_position(Position::simple_span(10, 11)).unwrap()
+            Location::simple_span(0, 1),
+            s.wrap_location(Location::simple_span(10, 11)).unwrap()
         );
         assert_eq!(
-            Position::Join(vec![Position::Single(9), Position::simple_span(0, 4)]),
-            s.wrap_position(Position::simple_span(9, 14)).unwrap()
+            Location::Join(vec![Location::Single(9), Location::simple_span(0, 4)]),
+            s.wrap_location(Location::simple_span(9, 14)).unwrap()
         );
         assert_eq!(
-            &s.wrap_position(Position::Span((8, Before(false)), (10, After(true))))
+            &s.wrap_location(Location::Span((8, Before(false)), (10, After(true))))
                 .unwrap()
                 .to_gb_format(),
             "join(9..10,1..>1)"
@@ -1370,13 +1370,13 @@ mod test {
 
     #[test]
     fn revcomp() {
-        let make_seq = |positions: Vec<Position>| Seq {
+        let make_seq = |locations: Vec<Location>| Seq {
             seq: "aaaaaaaaat".into(),
             topology: Topology::Linear,
-            features: positions
+            features: locations
                 .into_iter()
                 .map(|p| Feature {
-                    pos: p,
+                    location: p,
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 })
@@ -1384,28 +1384,28 @@ mod test {
             ..Seq::empty()
         };
         assert_eq!(
-            make_seq(vec![Position::simple_span(0, 1)])
+            make_seq(vec![Location::simple_span(0, 1)])
                 .revcomp()
                 .features[0]
-                .pos,
-            Position::Complement(Box::new(Position::simple_span(8, 9)))
+                .location,
+            Location::Complement(Box::new(Location::simple_span(8, 9)))
         );
         assert_eq!(
-            make_seq(vec![Position::Join(vec![
-                Position::simple_span(0, 1),
-                Position::simple_span(3, 4)
+            make_seq(vec![Location::Join(vec![
+                Location::simple_span(0, 1),
+                Location::simple_span(3, 4)
             ])])
             .revcomp()
             .features[0]
-                .pos,
-            Position::Complement(Box::new(Position::Join(vec![
-                Position::simple_span(5, 6),
-                Position::simple_span(8, 9)
+                .location,
+            Location::Complement(Box::new(Location::Join(vec![
+                Location::simple_span(5, 6),
+                Location::simple_span(8, 9)
             ])))
         );
         assert_eq!(
-            make_seq(vec![Position::Single(9)]).revcomp().features[0].pos,
-            Position::Complement(Box::new(Position::Single(0)))
+            make_seq(vec![Location::Single(9)]).revcomp().features[0].location,
+            Location::Complement(Box::new(Location::Single(0)))
         );
     }
 }
