@@ -18,8 +18,8 @@ fn main() {
                 println!(
                     ">{}:{}:{}",
                     record_name,
-                    f.get_qualifier_values(&qualifier_key!("locus_tag"))[0],
-                    f.get_qualifier_values(&qualifier_key!("gene"))[0]
+                    f.qualifier_values(qualifier_key!("locus_tag")).next().unwrap(),
+                    f.qualifier_values(qualifier_key!("gene")).next().unwrap()
                 );
                 let (start, end) = f.pos.find_bounds().unwrap();
                 let extracted = match f.pos {

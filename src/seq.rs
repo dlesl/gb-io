@@ -127,7 +127,7 @@ impl Position {
     pub fn find_bounds(&self) -> Result<(i64, i64), PositionError> {
         match *self {
             Position::Span((a, _), (b, _)) => Ok((a, b)),
-            Position::Complement(ref position) => Ok(position.find_bounds()?),
+            Position::Complement(ref position) => position.find_bounds(),
             Position::Join(ref positions) => {
                 let first = positions.first().ok_or(PositionError::Empty)?;
                 let last = positions.last().unwrap();
@@ -152,6 +152,7 @@ impl Position {
         }
     }
 
+    // Only returns `Err` if one of the closures does
     fn transform<P, V>(self, pos: &P, val: &V) -> Result<Position, PositionError>
     where
         P: Fn(Position) -> Result<Position, PositionError>,
@@ -165,31 +166,26 @@ impl Position {
         P: Fn(Position) -> Result<Position, PositionError>,
         V: Fn(i64) -> Result<i64, PositionError>,
     {
-        macro_rules! t_pos( ($i:expr) => ( pos($i)?.transform_impl(pos, val)?) );
-        macro_rules! t_vec( ($i:expr) => (
-                $i
-                .into_iter()
-                .map(|p| pos(p)?
-                    .transform_impl(pos, val))
-                    .collect::<Result<Vec<_>, _>>()?
-        )
-        );
+        use Position::*;
+        let t_vec = |ps: Vec<Position>| {
+            ps.into_iter()
+                .map(|p| pos(p)?.transform_impl(pos, val))
+                .collect::<Result<Vec<_>, _>>()
+        };
         let res = match self {
             // Apply the position closure
-            Position::Complement(p) => Position::Complement(Box::new(t_pos!(*p))),
-            Position::Order(positions) => Position::Order(t_vec!(positions)),
-            Position::Bond(positions) => Position::Bond(t_vec!(positions)),
-            Position::OneOf(positions) => Position::OneOf(t_vec!(positions)),
-            Position::Join(positions) => Position::Join(t_vec!(positions)),
+            Complement(p) => Complement(Box::new(pos(*p)?.transform_impl(pos, val)?)),
+            Order(ps) => Order(t_vec(ps)?),
+            Bond(ps) => Bond(t_vec(ps)?),
+            OneOf(ps) => OneOf(t_vec(ps)?),
+            Join(ps) => Join(t_vec(ps)?),
             // Apply the value closure
-            Position::Single(v) => Position::Single(val(v)?),
-            Position::Between(a, b) => Position::Between(val(a)?, val(b)?),
-            Position::Span((a, before), (b, after)) => {
-                Position::Span((val(a)?, before), (val(b)?, after))
-            }
+            Single(v) => Single(val(v)?),
+            Between(a, b) => Between(val(a)?, val(b)?),
+            Span((a, before), (b, after)) => Span((val(a)?, before), (val(b)?, after)),
             // We don't touch values here
-            Position::External(_, _) => self,
-            Position::Gap(_) => self,
+            External(..) => self,
+            Gap(..) => self,
         };
         Ok(res)
     }
@@ -298,15 +294,14 @@ pub struct Feature {
     pub qualifiers: Vec<(QualifierKey, Option<String>)>,
 }
 
-impl<'a> Feature {
+impl Feature {
     /// Returns all the values for a given QualifierKey. Qualifiers with no
     /// value (ie. `/foo`) are ignored
-    pub fn get_qualifier_values(&'a self, key: &QualifierKey) -> Vec<&'a str> {
+    pub fn qualifier_values(&self, key: QualifierKey) -> impl Iterator<Item = &str> {
         self.qualifiers
             .iter()
-            .filter(|&&(ref k, _)| k == key)
+            .filter(move |&(k, _)| k == &key)
             .filter_map(|&(_, ref v)| v.as_ref().map(String::as_str))
-            .collect()
     }
 }
 
@@ -513,52 +508,42 @@ impl Seq {
             Ok(res)
         })
     }
-    pub fn unwrap_position2(&self, p: Position, pivot: i64) -> Result<Position, PositionError> {
-        let (first, last) = p.find_bounds()?;
-        if first < 0 || last >= self.len() {
-            return Err(PositionError::OutOfBounds(p));
-        }
-        if last < first && !self.is_circular() {
-            return Err(PositionError::OutOfBounds(p));
-        }
-        let len = self.len();
-        p.transform(&|p| Ok(p), &|v| {
-            let res = if v < pivot { v + len } else { v };
-            Ok(res)
-        })
-    }
 
+    /// "Wraps" a position on a circular sequence, so that coordinates that
+    /// extend beyond the end of the sequence are are wrapped to the origin.
     pub fn wrap_position(&self, p: Position) -> Result<Position, PositionError> {
         use Position::*;
-        let res = p.transform(
-            &|p| {
-                let res = match p {
-                    Single(mut a) => {
-                        while a >= self.len() {
-                            a -= self.len();
+        let res = p
+            .transform(
+                &|p| {
+                    let res = match p {
+                        Single(mut a) => {
+                            while a >= self.len() {
+                                a -= self.len();
+                            }
+                            Single(a)
                         }
-                        Single(a)
-                    }
-                    Span((mut a, before), (mut b, after)) => {
-                        while a >= self.len() {
-                            a -= self.len();
-                            b -= self.len();
+                        Span((mut a, before), (mut b, after)) => {
+                            while a >= self.len() {
+                                a -= self.len();
+                                b -= self.len();
+                            }
+                            if b < self.len() {
+                                Span((a, before), (b, after))
+                            } else {
+                                Join(vec![
+                                    Span((a, before), (self.len() - 1, After(false))),
+                                    Span((0, Before(false)), (b - self.len(), after)),
+                                ])
+                            }
                         }
-                        if b < self.len() {
-                            Span((a, before), (b, after))
-                        } else {
-                            Join(vec![
-                                Span((a, before), (self.len() - 1, After(false))),
-                                Span((0, Before(false)), (b - self.len(), after)),
-                            ])
-                        }
-                    }
-                    p => p,
-                };
-                Ok(res)
-            },
-            &|v| Ok(v),
-        )?;
+                        p => p,
+                    };
+                    Ok(res)
+                },
+                &|v| Ok(v),
+            )
+            .unwrap();
         simplify(res)
     }
 
@@ -588,67 +573,63 @@ impl Seq {
             while shift >= self.len() {
                 shift -= self.len();
             }
-            let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift))?;
+            let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap(); // can't fail
             self.wrap_position(moved)
         } else {
             p.transform(&|p| Ok(p), &|v| Ok(v + shift))
         }
     }
 
-    // needs testing
-    /// Note: If this fails you won't get the original `Position`
-    /// back. If this is important, you should clone first
-    pub fn revcomp_position(&self, p: Position) -> Result<Position, PositionError> {
-        let p = p.transform(
-            &|mut p| {
-                match p {
-                    // Position::Span(ref mut a, ref mut b) => mem::swap(a, b),
-                    Position::Join(ref mut positions)
-                    | Position::Order(ref mut positions)
-                    | Position::Bond(ref mut positions)
-                    | Position::OneOf(ref mut positions) => {
-                        positions.reverse();
-                    }
-                    _ => (),
-                };
-                let p = match p {
-                    Position::Span((a, Before(before)), (b, After(after))) => {
-                        Position::Span((b, Before(after)), (a, After(before)))
-                    }
-                    Position::Between(a, b) => Position::Between(b, a),
-                    // Position::After(x) => Position::Before(x),
-                    p => p,
-                };
-                Ok(p)
-            },
-            &|v| Ok(self.len() - 1 - v),
-        )?;
-        let p = match p {
+    /// Used by `revcomp`
+    fn revcomp_position(&self, p: Position) -> Position {
+        let p = p
+            .transform(
+                &|mut p| {
+                    match p {
+                        Position::Join(ref mut positions)
+                        | Position::Order(ref mut positions)
+                        | Position::Bond(ref mut positions)
+                        | Position::OneOf(ref mut positions) => {
+                            positions.reverse();
+                        }
+                        _ => (),
+                    };
+                    let p = match p {
+                        Position::Span((a, Before(before)), (b, After(after))) => {
+                            Position::Span((b, Before(after)), (a, After(before)))
+                        }
+                        Position::Between(a, b) => Position::Between(b, a),
+                        p => p,
+                    };
+                    Ok(p)
+                },
+                &|v| Ok(self.len() - 1 - v),
+            )
+            .unwrap(); // can't fail
+        match p {
             Position::Complement(x) => *x,
             x => Position::Complement(Box::new(x)),
-        };
-        Ok(p)
+        }
     }
 
     /// Note: If this fails you won't get the original `Feature`
     /// back. If this is important, you should clone first
-    pub fn revcomp_feature(&self, f: Feature) -> Result<Feature, PositionError> {
-        let res = Feature {
-            pos: self.revcomp_position(f.pos)?,
+    pub fn revcomp_feature(&self, f: Feature) -> Feature {
+        Feature {
+            pos: self.revcomp_position(f.pos),
             ..f
-        };
-        Ok(res)
+        }
     }
+
     /// Returns the reverse complement of a `Seq`, skipping any features
     /// which can't be processed with a warning
     pub fn revcomp(&self) -> Seq {
-        let mut features = Vec::new();
-        for f in &self.features {
-            match self.revcomp_feature(f.clone()) {
-                Ok(f) => features.push(f),
-                Err(e) => warn!("Skipping feature while revcomping sequence: {}", e),
-            }
-        }
+        let features = self
+            .features
+            .iter()
+            .cloned()
+            .map(|f| self.revcomp_feature(f))
+            .collect();
         Seq {
             features,
             seq: revcomp(&self.seq),
@@ -697,7 +678,7 @@ impl Seq {
                 if (x < 0 || y < 0 || x > self.len() || y > self.len())
                     || (!self.is_circular() && y < x)
                 {
-                    warn!("Skipping feature with invalid position {}", f.pos);
+                    warn!("Skipping feature with invalid position: {}", f.pos);
                     continue;
                 }
                 let (mut x, mut y) = self.unwrap_range(x, y + 1); // to exclusive
@@ -725,9 +706,7 @@ impl Seq {
     /// extend beyond this range.  Note that `end` is not
     /// inclusive. Skips ambiguous features with a warning.
     pub fn extract_range(&self, start: i64, end: i64) -> Seq {
-        debug!("Extract: {} to {}, len is {}", start, end, self.len());
         let (start, end) = self.unwrap_range(start, end);
-        debug!("Normalised: {} to {}", start, end);
         let mut shift = -start;
         if self.is_circular() {
             while shift < 0 {
@@ -743,8 +722,7 @@ impl Seq {
             if (x < 0 || y < 0 || x > self.len() || y > self.len())
                 || (!self.is_circular() && y < x)
             {
-                warn!("Skipping feature with invalid position {}", f.pos);
-                return Ok(());
+                return Err(PositionError::OutOfBounds(f.pos.clone()));
             }
             let relocated = self.relocate_position(f.pos.clone(), shift)?;
             if let Some(truncated) = relocated.truncate(0, end - start) {
@@ -756,12 +734,8 @@ impl Seq {
             Ok(())
         };
         for f in &self.features {
-            match process_feature(f) {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("Skipping feature with tricky position: {}", e);
-                    continue;
-                }
+            if let Err(e) = process_feature(f) {
+                warn!("Skipping feature with tricky position: {}", e);
             }
         }
         Seq {
@@ -793,39 +767,40 @@ impl Seq {
     }
 }
 
+//TODO: should we merge adjacent positions when Before/After is set?
 fn merge_adjacent(ps: Vec<Position>) -> Vec<Position> {
     use Position::*;
     let mut res: Vec<Position> = Vec::with_capacity(ps.len());
     for p in ps {
         if let Some(last) = res.last_mut() {
-            match (last.clone(), p) {
-                (Single(a), Single(b)) => {
-                    if a + 1 == b {
-                        *last = Position::simple_span(a, b);
-                    } else if a != b {
+            match (&last, p) {
+                (Single(ref a), Single(b)) => {
+                    if *a + 1 == b {
+                        *last = Position::simple_span(*a, b);
+                    } else if *a != b {
                         // ie. join(1,1) (can this happen?)
                         res.push(Single(b));
                     }
                 }
-                (Single(a), Span((c, before), d)) => {
-                    if a + 1 == c {
-                        *last = Span((a, Before(false)), d); // TODO: take before from new span? (ie. move it left?)
+                (Single(ref a), Span((c, Before(false)), d)) => {
+                    if *a + 1 == c {
+                        *last = Span((*a, Before(false)), d);
                     } else {
-                        res.push(Span((c, before), d));
+                        res.push(Span((c, Before(false)), d));
                     }
                 }
-                (Span(a, (b, _after)), Single(d)) => {
-                    if b + 1 == d {
-                        *last = Span(a, (d, After(false))); // same here?
+                (Span(ref a, (ref b, After(false))), Single(d)) => {
+                    if *b + 1 == d {
+                        *last = Span(*a, (d, After(false)));
                     } else {
                         res.push(Single(d));
                     }
                 }
-                (Span(a, (b, _after)), Span((c, before), d)) => {
-                    if b + 1 == c {
-                        *last = Span(a, d); // and here?
+                (Span(a, (ref b, After(false))), Span((c, Before(false)), d)) => {
+                    if *b + 1 == c {
+                        *last = Span(*a, d);
                     } else {
-                        res.push(Span((c, before), d));
+                        res.push(Span((c, Before(false)), d));
                     }
                 }
                 (_, p) => res.push(p),
@@ -1387,7 +1362,8 @@ mod test {
         );
         assert_eq!(
             &s.wrap_position(Position::Span((8, Before(false)), (10, After(true))))
-                .unwrap().to_gb_format(),
+                .unwrap()
+                .to_gb_format(),
             "join(9..10,1..>1)"
         );
     }

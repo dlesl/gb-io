@@ -218,8 +218,8 @@ fn concat_lines<'a, T: Iterator<Item = &'a [u8]>>(lines: T, keep_linebreaks: boo
     }
 }
 
-/// Matches an entry beginning with an (optionally) indented identifier followed
-/// by one of more indented lines of free text
+// Matches an entry beginning with an (optionally) indented identifier followed
+// by one of more indented lines of free text
 named_args!(field_bytes<'a>(indent: usize, name: &str, keep_ws: bool) <Vec<u8>>,
     do_parse!(
         apply!(space_indent, indent) >>
