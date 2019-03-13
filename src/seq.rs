@@ -436,8 +436,8 @@ impl Seq {
         let len = self.len();
         match self.topology {
             Topology::Linear => {
-                assert!(start < end);
-                assert!(start >= 0 && start < len && end > 0 && end <= len);
+                assert!(start <= end);
+                assert!(start >= 0 && start < len && end >= 0 && end <= len);
                 (start, end)
             }
             Topology::Circular => {
