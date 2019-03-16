@@ -576,7 +576,7 @@ impl Seq {
             let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap(); // can't fail
             self.wrap_location(moved)
         } else {
-            p.transform(&|p| Ok(p), &|v| Ok(v + shift))
+            Ok(p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap())
         }
     }
 
@@ -716,28 +716,23 @@ impl Seq {
                 shift -= self.len();
             }
         }
-        let mut features = Vec::new();
-        let mut process_feature = |f: &Feature| -> Result<(), LocationError> {
-            let (x, y) = f.location.find_bounds()?;
-            if (x < 0 || y < 0 || x > self.len() || y > self.len())
-                || (!self.is_circular() && y < x)
-            {
-                return Err(LocationError::OutOfBounds(f.location.clone()));
-            }
-            let relocated = self.relocate_location(f.location.clone(), shift)?;
-            if let Some(truncated) = relocated.truncate(0, end - start) {
-                features.push(Feature {
-                    location: truncated,
-                    ..f.clone()
-                });
-            }
-            Ok(())
-        };
-        for f in &self.features {
-            if let Err(e) = process_feature(f) {
-                warn!("Skipping feature with tricky location: {}", e);
-            }
-        }
+        let features = self
+            .features
+            .iter()
+            .flat_map(
+                |f| match self.relocate_location(f.location.clone(), shift) {
+                    // let `truncate` filter locations outside the range
+                    Ok(l) => l.truncate(0, end - start).map(|location| Feature {
+                        location,
+                        ..f.clone()
+                    }),
+                    Err(e) => {
+                        warn!("Skipping feature, can't process invalid location: {}", e);
+                        None
+                    }
+                },
+            )
+            .collect();
         Seq {
             features,
             seq: self.extract_range_seq(start, end).into(),
@@ -1216,6 +1211,25 @@ mod test {
     }
 
     #[test]
+    fn extract_range_wrapped_linear() {
+        let features = vec![Feature {
+            location: Location::Join(vec![
+                Location::simple_span(5, 9),
+                Location::simple_span(0, 4),
+            ]),
+            kind: FeatureKind::from(""),
+            qualifiers: Vec::new(),
+        }];
+        let s = Seq {
+            seq: (0..10).collect(),
+            features,
+            ..Seq::empty()
+        };
+        let res = s.extract_range(2, 8);
+        assert_eq!(res.features.len(), 1);
+        println!("{:?}", res.features[0].location);
+    }
+    #[test]
     fn set_origin() {
         init();
         let seq = Seq {
@@ -1324,7 +1338,10 @@ mod test {
             ..Seq::empty()
         };
         let location = Location::simple_span(2, 4);
-        assert_eq!(s.unwrap_location(location).unwrap(), Location::simple_span(2, 4));
+        assert_eq!(
+            s.unwrap_location(location).unwrap(),
+            Location::simple_span(2, 4)
+        );
         s.topology = Topology::Circular;
         let location = Location::simple_span(7, 3);
         assert_eq!(
