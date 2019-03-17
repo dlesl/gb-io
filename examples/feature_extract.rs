@@ -5,9 +5,7 @@ extern crate bio;
 use std::fs::File;
 use std::str;
 
-use bio::alphabets::dna::revcomp;
 use gb_io::reader::SeqReader;
-use gb_io::seq::Location;
 
 fn main() {
     for r in SeqReader::new(File::open("tests/mg1655.gb").unwrap()) {
@@ -21,13 +19,7 @@ fn main() {
                     f.qualifier_values(qualifier_key!("locus_tag")).next().unwrap(),
                     f.qualifier_values(qualifier_key!("gene")).next().unwrap()
                 );
-                let (start, end) = f.location.find_bounds().unwrap();
-                let extracted = match f.location {
-                    Location::Complement(_) => {
-                        revcomp(&r.extract_range_seq(start, end + 1)[..]).into()
-                    }
-                    _ => r.extract_range_seq(start, end + 1),
-                };
+                let extracted = r.extract_location_seq(&f.location).unwrap();
                 for line in extracted.chunks(60) {
                     println!("{}", str::from_utf8(line).unwrap());
                 }

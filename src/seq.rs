@@ -4,6 +4,7 @@ use std::cmp;
 use std::fmt;
 use std::io;
 use std::io::Write;
+use std::slice;
 use std::str;
 
 // use chrono::NaiveDate;
@@ -740,6 +741,50 @@ impl Seq {
         }
     }
 
+    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
+        // closures can't call themselves, so need a fn
+        fn process_loc(
+            seq: &[u8],
+            l: &Location,
+            fwd: bool,
+            res: &mut Vec<u8>,
+        ) -> Result<(), LocationError> {
+            let oob = || LocationError::OutOfBounds(l.clone());
+            let usize_or = |a: i64| -> Result<usize, LocationError> {
+                if a < 0 {
+                    Err(oob())
+                } else {
+                    Ok(a as usize)
+                }
+            };
+            let mut add_slice = |s: &[u8]| {
+                if fwd {
+                    res.extend_from_slice(s);
+                } else {
+                    res.extend_from_slice(&revcomp(s));
+                }
+            };
+            use Location::*;
+            match *l {
+                Single(a) => add_slice(slice::from_ref(seq.get(usize_or(a)?).ok_or_else(oob)?)),
+                Span((a, _), (b, _)) => {
+                    add_slice(seq.get(usize_or(a)?..usize_or(b + 1)?).ok_or_else(oob)?)
+                }
+                Join(ref ls) => {
+                    for l in ls {
+                        process_loc(seq, l, fwd, res)?;
+                    }
+                }
+                Complement(ref b) => process_loc(seq, b.as_ref(), !fwd, res)?,
+                _ => return Err(LocationError::Ambiguous(l.clone())),
+            };
+            Ok(())
+        }
+        let mut res = Vec::new();
+        process_loc(&self.seq, &l, true, &mut res)?;
+        Ok(res)
+    }
+
     /// Returns a new `Seq`, rotated so that `origin` is at the start
     pub fn set_origin(&self, origin: i64) -> Seq {
         assert!(self.is_circular());
@@ -1348,6 +1393,27 @@ mod test {
             s.unwrap_location(location).unwrap(),
             Location::simple_span(7, 13)
         )
+    }
+
+    #[test]
+    fn extract_location_seq() {
+        let s = Seq {
+            seq: (0..10).collect(),
+            topology: Topology::Linear,
+            ..Seq::empty()
+        };
+        assert_eq!(s.extract_location_seq(&Location::Single(0)), Ok(vec![0]));
+        assert_eq!(
+            s.extract_location_seq(&Location::simple_span(1, 5)),
+            Ok(vec![1, 2, 3, 4, 5])
+        );
+        assert_eq!(
+            s.extract_location_seq(&Location::Join(vec![
+                Location::simple_span(1, 5),
+                Location::Single(7)
+            ])),
+            Ok(vec![1, 2, 3, 4, 5, 7])
+        );
     }
 
     #[test]
