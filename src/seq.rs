@@ -469,13 +469,11 @@ impl Seq {
     /// Given a range on this sequence, returns a corresponding `Location`
     /// Note: this is a rust-style, exclusive range
     pub fn range_to_location(&self, start: i64, end: i64) -> Location {
-        match self.topology {
+        let res = match self.topology {
             Topology::Linear => {
-                if start + 1 == end {
-                    Location::Single(start)
-                } else {
-                    Location::simple_span(start, end - 1)
-                }
+                assert!(end > start);
+                assert!(start < self.len() && end <= self.len());
+                Location::simple_span(start, end - 1)
             }
             Topology::Circular => {
                 let (start, end) = self.unwrap_range(start, end);
@@ -485,13 +483,12 @@ impl Seq {
                         Location::simple_span(start, self.len() - 1),
                         Location::simple_span(0, end - self.len() - 1),
                     ])
-                } else if start == end {
-                    Location::Single(start)
                 } else {
                     Location::simple_span(start, end - 1)
                 }
             }
-        }
+        };
+        simplify(res).expect("invalid Location not possible here")
     }
     /// "Unwraps" a location on a circular sequence, so that coordinates that
     /// span the origin are replaced with locations beyond the origin.
@@ -1331,7 +1328,7 @@ mod test {
         assert_eq!(s.range_to_location(5, 10), Location::simple_span(5, 9));
         assert_eq!(
             s.range_to_location(5, 11).to_gb_format(),
-            "join(6..10,1..1)"
+            "join(6..10,1)"
         );
         assert_eq!(
             s.range_to_location(5, 15).to_gb_format(),
