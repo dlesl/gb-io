@@ -6,7 +6,7 @@ mod nom_parsers;
 mod streaming_parser;
 use self::streaming_parser::StreamParser;
 use crate::errors::GbParserError;
-use crate::seq::Seq;
+use crate::seq::{Location, Seq};
 
 #[derive(Debug)]
 pub struct SeqReader<T: Read> {
@@ -48,6 +48,19 @@ pub fn parse_file<P: AsRef<::std::path::Path>>(path: P) -> Result<Vec<Seq>, GbPa
 /// `SeqReader` instead. I've mainly left this here for benchmarking purposes.
 pub fn parse_slice(data: &[u8]) -> Result<Vec<Seq>, GbParserError> {
     let res = nom_parsers::gb_records(data);
+    match res {
+        Ok((_, o)) => Ok(o),
+        Err(e) => {
+            Err(GbParserError::SyntaxError(
+                format!("{:?}", e),
+            ))
+        }
+    }
+}
+
+/// used by `Location::from_gb_format`
+pub (crate) fn parse_location(data: &[u8]) -> Result<Location, GbParserError> {
+    let res = nom_parsers::location(nom::types::CompleteByteSlice(data));
     match res {
         Ok((_, o)) => Ok(o),
         Err(e) => {

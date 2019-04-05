@@ -710,7 +710,7 @@ named!(
 );
 
 named!(
-    location<CompleteByteSlice, Location>,
+    pub location<CompleteByteSlice, Location>,
     // Order is important here, `pos_single` eats the first number in a
     // range otherwise
     alt_complete!(
