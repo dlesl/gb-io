@@ -4,11 +4,10 @@ use std::cmp;
 use std::fmt;
 use std::io;
 use std::io::Write;
-use std::slice;
 use std::str;
 
-// use chrono::NaiveDate;
-
+use crate::errors::GbParserError;
+use crate::reader::parse_location;
 pub use crate::{FeatureKind, QualifierKey};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -247,6 +246,13 @@ impl Location {
         }
     }
 
+    fn complement(self) -> Location {
+        match self {
+            Location::Complement(x) => *x,
+            x => Location::Complement(Box::new(x)),
+        }
+    }
+
     pub fn to_gb_format(&self) -> String {
         fn location_list(locations: &[Location]) -> String {
             locations
@@ -275,6 +281,10 @@ impl Location {
             Location::Gap(Some(length)) => format!("gap({})", length),
             Location::Gap(None) => format!("gap()"),
         }
+    }
+
+    pub fn from_gb_format(s: &str) -> Result<Location, GbParserError> {
+        parse_location(s.as_bytes())
     }
 }
 
@@ -604,10 +614,7 @@ impl Seq {
                 &|v| Ok(self.len() - 1 - v),
             )
             .unwrap(); // can't fail
-        match p {
-            Location::Complement(x) => *x,
-            x => Location::Complement(Box::new(x)),
-        }
+        p.complement()
     }
 
     /// Note: If this fails you won't get the original `Feature`
@@ -738,47 +745,127 @@ impl Seq {
         }
     }
 
-    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
-        // closures can't call themselves, so need a fn
-        fn process_loc(
-            seq: &[u8],
-            l: &Location,
-            fwd: bool,
-            res: &mut Vec<u8>,
-        ) -> Result<(), LocationError> {
-            let oob = || LocationError::OutOfBounds(l.clone());
-            let usize_or = |a: i64| -> Result<usize, LocationError> {
-                if a < 0 {
-                    Err(oob())
-                } else {
-                    Ok(a as usize)
+    fn find_spans(
+        &self,
+        l: &Location,
+        fwd: bool,
+        cb: &mut FnMut(&Location, i64, i64, bool) -> Result<(), LocationError>,
+    ) -> Result<(), LocationError> {
+        use Location::*;
+        match *l {
+            Single(a) => cb(l, a, a, fwd)?,
+            Span((a, _), (b, _)) => cb(l, a, b, fwd)?,
+            Join(ref ls) => {
+                for l in ls {
+                    self.find_spans(l, fwd, cb)?;
                 }
-            };
-            let mut add_slice = |s: &[u8]| {
+            }
+            Complement(ref b) => self.find_spans(b.as_ref(), !fwd, cb)?,
+            _ => return Err(LocationError::Ambiguous(l.clone())),
+        };
+        Ok(())
+    }
+
+    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
+        let mut res = Vec::new();
+        let mut add_slice =
+            |l: &Location, from: i64, to: i64, fwd: bool| -> Result<(), LocationError> {
+                let usize_or = |a: i64| -> Result<usize, LocationError> {
+                    if a < 0 {
+                        Err(LocationError::OutOfBounds(l.clone()))
+                    } else {
+                        Ok(a as usize)
+                    }
+                };
+                let s = self
+                    .seq
+                    .get(usize_or(from)?..usize_or(to + 1)?)
+                    .ok_or_else(|| LocationError::OutOfBounds(l.clone()))?;
                 if fwd {
                     res.extend_from_slice(s);
                 } else {
                     res.extend_from_slice(&revcomp(s));
                 }
+                Ok(())
             };
-            use Location::*;
-            match *l {
-                Single(a) => add_slice(slice::from_ref(seq.get(usize_or(a)?).ok_or_else(oob)?)),
-                Span((a, _), (b, _)) => {
-                    add_slice(seq.get(usize_or(a)?..usize_or(b + 1)?).ok_or_else(oob)?)
-                }
-                Join(ref ls) => {
-                    for l in ls {
-                        process_loc(seq, l, fwd, res)?;
-                    }
-                }
-                Complement(ref b) => process_loc(seq, b.as_ref(), !fwd, res)?,
-                _ => return Err(LocationError::Ambiguous(l.clone())),
-            };
+        self.find_spans(&l, true, &mut add_slice)?;
+        Ok(res)
+    }
+
+    pub fn extract_location(&self, l: &Location) -> Result<Seq, LocationError> {
+        let seq = self.extract_location_seq(l)?;
+        let mut spans = Vec::new();
+        // since `extract_location_seq` worked, we know all of the ranges are valid here
+        let mut offset = 0;
+        self.find_spans(&l, true, &mut |_, from, to, fwd| {
+            spans.push((offset, from, to, fwd));
+            offset += to - from + 1;
             Ok(())
+        })?;
+        // apparently a feature can reference a specific position more than once,
+        // for example "join(1..2, 2..3)". This is the case in 'yabP' of the 01-AUG-2014
+        // version of U00096.3. In this case, it's probably just an annotation error since it's
+        // no longer there, but we should support this anyway, since it's probably biologically
+        // possible.
+        // The solution is to merge all the intervals we're about to extract so we don't extract
+        // anything twice.
+        //
+        // sort by lower bound
+        spans.sort_by(|(_, a, ..), (_, b, ..)| a.cmp(b));
+        // merge overlapping intervals
+        let mut merged = Vec::new();
+        for (offset, from, to, fwd) in spans {
+            if let Some((_, _, last_to, _)) = merged.last_mut() {
+                if from <= *last_to {
+                    *last_to = cmp::max(*last_to, to);
+                    continue;
+                }
+            }
+            merged.push((offset, from, to, fwd));
         }
-        let mut res = Vec::new();
-        process_loc(&self.seq, &l, true, &mut res)?;
+
+        let mut features = Vec::new();
+        for f in &self.features {
+            let p =
+                f.location == Location::from_gb_format("join(58474..59052,59052..59279)").unwrap();
+            let mut locations: Vec<_> = merged
+                .iter()
+                .flat_map(|&(offset, from, to, fwd)| {
+                    f.location.truncate(from, to + 1).map(|l| {
+                        if p {
+                            std::dbg!((from, to));
+                        }
+                        let l = l
+                            .transform(&|l| Ok(l), &|v| Ok(v - (from - offset)))
+                            .unwrap();
+                        if p {
+                            std::dbg!(l.to_gb_format());
+                        }
+                        if fwd {
+                            l
+                        } else {
+                            l.complement()
+                        }
+                    })
+                })
+                .collect();
+            if !locations.is_empty() {
+                let location = if locations.len() == 1 {
+                    locations.pop().unwrap()
+                } else {
+                    Location::Join(locations)
+                };
+                features.push(Feature {
+                    location: simplify(location)?,
+                    ..f.clone()
+                });
+            }
+        }
+        let res = Seq {
+            seq,
+            features,
+            ..Seq::empty()
+        };
         Ok(res)
     }
 
@@ -1406,10 +1493,10 @@ mod test {
         );
         assert_eq!(
             s.extract_location_seq(&Location::Join(vec![
-                Location::simple_span(1, 5),
+                Location::Complement(Box::new(Location::simple_span(1, 5))),
                 Location::Single(7)
             ])),
-            Ok(vec![1, 2, 3, 4, 5, 7])
+            Ok(vec![5, 4, 3, 2, 1, 7])
         );
     }
 
