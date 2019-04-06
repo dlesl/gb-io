@@ -10,7 +10,7 @@
 #![recursion_limit = "128"]
 extern crate circular;
 #[macro_use]
-extern crate failure;
+extern crate err_derive;
 extern crate itertools;
 #[macro_use]
 extern crate log;

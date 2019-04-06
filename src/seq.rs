@@ -98,18 +98,18 @@ pub enum Location {
     Gap(Option<i64>),
 }
 
-#[derive(Debug, Fail, PartialEq)]
+#[derive(Debug, Error, PartialEq)]
 pub enum LocationError {
-    #[fail(display = "Can't determine location due to ambiguity: {}", _0)]
+    #[error(display = "Can't determine location due to ambiguity: {}", _0)]
     Ambiguous(Location),
-    #[fail(display = "Can't resolve external location `{}`: {}", _0, _1)]
+    #[error(display = "Can't resolve external location `{}`: {}", _0, _1)]
     External(Location, String), // TODO: real error type
-    #[fail(display = "Recursion limit reached while processing: {}", _0)]
+    #[error(display = "Recursion limit reached while processing: {}", _0)]
     Recursion(Location),
     // TODO: actually implement this
-    #[fail(display = "Empty location list encountered")]
+    #[error(display = "Empty location list encountered")]
     Empty,
-    #[fail(
+    #[error(
         display = "Location refers to a location outside of the sequence: {}",
         _0
     )]

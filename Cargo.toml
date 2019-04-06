@@ -16,7 +16,7 @@ string_cache_codegen = "0.4.2"
 [dependencies]
 itertools = "0.8"
 circular = "0.2"
-failure = "0.1.5"
+err-derive = "0.1"
 string_cache = "0.7.3"
 log = "0.4"
 nom = "4.2.2"

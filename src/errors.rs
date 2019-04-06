@@ -1,10 +1,10 @@
 use std::io;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum GbParserError {
-    #[fail(display = "Syntax error: {}", _0)]
+    #[error(display = "Syntax error: {}", _0)]
     SyntaxError(String),
-    #[fail(display = "{}", _0)]
+    #[error(display = "{}", _0)]
     Io(#[cause] io::Error),
 }
 
