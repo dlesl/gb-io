@@ -1,6 +1,7 @@
 use bio::alphabets::dna::revcomp;
 use std::borrow::Cow;
 use std::cmp;
+use std::error::Error;
 use std::fmt;
 use std::io;
 use std::io::Write;
@@ -101,8 +102,8 @@ pub enum Location {
 pub enum LocationError {
     #[fail(display = "Can't determine location due to ambiguity: {}", _0)]
     Ambiguous(Location),
-    #[fail(display = "Can't resolve external location: {}", _0)]
-    External(Location),
+    #[fail(display = "Can't resolve external location `{}`: {}", _0, _1)]
+    External(Location, String), // TODO: real error type
     #[fail(display = "Recursion limit reached while processing: {}", _0)]
     Recursion(Location),
     // TODO: actually implement this
@@ -745,59 +746,94 @@ impl Seq {
         }
     }
 
-    fn find_spans(
-        &self,
-        l: &Location,
-        fwd: bool,
-        cb: &mut FnMut(&Location, i64, i64, bool) -> Result<(), LocationError>,
-    ) -> Result<(), LocationError> {
-        use Location::*;
-        match *l {
-            Single(a) => cb(l, a, a, fwd)?,
-            Span((a, _), (b, _)) => cb(l, a, b, fwd)?,
-            Join(ref ls) => {
-                for l in ls {
-                    self.find_spans(l, fwd, cb)?;
-                }
-            }
-            Complement(ref b) => self.find_spans(b.as_ref(), !fwd, cb)?,
-            _ => return Err(LocationError::Ambiguous(l.clone())),
-        };
-        Ok(())
+    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
+        self.extract_location_seq_fetch_external(l, &mut |_| {
+            Err("Not configured to fetch external sequences".into())
+        })
     }
 
-    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
-        let mut res = Vec::new();
-        let mut add_slice =
-            |l: &Location, from: i64, to: i64, fwd: bool| -> Result<(), LocationError> {
-                let usize_or = |a: i64| -> Result<usize, LocationError> {
-                    if a < 0 {
-                        Err(LocationError::OutOfBounds(l.clone()))
-                    } else {
-                        Ok(a as usize)
-                    }
-                };
-                let s = self
-                    .seq
-                    .get(usize_or(from)?..usize_or(to + 1)?)
-                    .ok_or_else(|| LocationError::OutOfBounds(l.clone()))?;
-                if fwd {
-                    res.extend_from_slice(s);
+    pub fn extract_location_seq_fetch_external<F>(
+        &self,
+        l: &Location,
+        ext_fetcher: &mut F,
+    ) -> Result<Vec<u8>, LocationError>
+    where
+        F: FnMut(&str) -> Result<Seq, String>,
+    {
+        let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
+            let usize_or = |a: i64| -> Result<usize, LocationError> {
+                if a < 0 {
+                    Err(LocationError::OutOfBounds(l.clone()))
                 } else {
-                    res.extend_from_slice(&revcomp(s));
+                    Ok(a as usize)
                 }
-                Ok(())
             };
-        self.find_spans(&l, true, &mut add_slice)?;
+            let s = self
+                .seq
+                .get(usize_or(from)?..=usize_or(to)?)
+                .ok_or_else(|| LocationError::OutOfBounds(l.clone()))?;
+            Ok(s)
+        };
+        use Location::*;
+        let res = match *l {
+            Single(a) => get_range(a, a)?.into(),
+            Span((a, _), (b, _)) => get_range(a, b)?.into(),
+            Join(ref ls) => {
+                let mut res = Vec::new();
+                for l in ls {
+                    res.extend_from_slice(
+                        &self.extract_location_seq_fetch_external(l, ext_fetcher)?,
+                    );
+                }
+                res
+            }
+            Complement(ref l) => revcomp(self.extract_location_seq_fetch_external(l, ext_fetcher)?),
+            External(ref name, ref ext_l) => {
+                let ext_seq =
+                    ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), e))?;
+                if let Some(ext_l) = ext_l {
+                    ext_seq.extract_location_seq_fetch_external(ext_l, ext_fetcher)?
+                } else {
+                    ext_seq.seq
+                }
+            }
+            _ => return Err(LocationError::Ambiguous(l.clone())),
+        };
         Ok(res)
     }
 
     pub fn extract_location(&self, l: &Location) -> Result<Seq, LocationError> {
         let seq = self.extract_location_seq(l)?;
         let mut spans = Vec::new();
+
+        fn find_spans(
+            l: &Location,
+            fwd: bool,
+            cb: &mut FnMut(i64, i64, bool) -> Result<(), LocationError>,
+        ) -> Result<(), LocationError> {
+            use Location::*;
+            match *l {
+                Single(a) => cb(a, a, fwd)?,
+                Span((a, _), (b, _)) => cb(a, b, fwd)?,
+                Join(ref ls) => {
+                    if fwd {
+                        for l in ls {
+                            find_spans(l, fwd, cb)?;
+                        }
+                    } else {
+                        for l in ls.iter().rev() {
+                            find_spans(l, fwd, cb)?;
+                        }
+                    }
+                }
+                Complement(ref b) => find_spans(b.as_ref(), !fwd, cb)?,
+                _ => return Err(LocationError::Ambiguous(l.clone())),
+            };
+            Ok(())
+        }
         // since `extract_location_seq` worked, we know all of the ranges are valid here
         let mut offset = 0;
-        self.find_spans(&l, true, &mut |_, from, to, fwd| {
+        find_spans(&l, true, &mut |from, to, fwd| {
             spans.push((offset, from, to, fwd));
             offset += to - from + 1;
             Ok(())
@@ -812,11 +848,11 @@ impl Seq {
         //
         // sort by lower bound
         spans.sort_by(|(_, a, ..), (_, b, ..)| a.cmp(b));
-        // merge overlapping intervals
+        // merge overlapping intervals (in the same direction)
         let mut merged = Vec::new();
         for (offset, from, to, fwd) in spans {
-            if let Some((_, _, last_to, _)) = merged.last_mut() {
-                if from <= *last_to {
+            if let Some((_, _, last_to, last_fwd)) = merged.last_mut() {
+                if from <= *last_to && fwd == *last_fwd {
                     *last_to = cmp::max(*last_to, to);
                     continue;
                 }
@@ -826,21 +862,13 @@ impl Seq {
 
         let mut features = Vec::new();
         for f in &self.features {
-            let p =
-                f.location == Location::from_gb_format("join(58474..59052,59052..59279)").unwrap();
             let mut locations: Vec<_> = merged
                 .iter()
                 .flat_map(|&(offset, from, to, fwd)| {
                     f.location.truncate(from, to + 1).map(|l| {
-                        if p {
-                            std::dbg!((from, to));
-                        }
                         let l = l
                             .transform(&|l| Ok(l), &|v| Ok(v - (from - offset)))
                             .unwrap();
-                        if p {
-                            std::dbg!(l.to_gb_format());
-                        }
                         if fwd {
                             l
                         } else {
@@ -968,7 +996,16 @@ fn simplify_shallow(p: Location) -> Result<Location, LocationError> {
                 // so we need to simplify again
                 Ok(simplify_shallow(xs.pop().unwrap())?)
             } else {
-                Ok(Join(xs))
+                //if everything is 'complement', reverse the order and move it outside
+                if xs
+                    .iter()
+                    .all(|x| if let Complement(_) = x { true } else { false })
+                {
+                    xs = xs.into_iter().rev().map(Location::complement).collect();
+                    Ok(Join(xs).complement())
+                } else {
+                    Ok(Join(xs))
+                }
             }
         }
         Span((a, Before(false)), (b, After(false))) if a == b => Ok(Single(a)),
@@ -1413,10 +1450,7 @@ mod test {
             ..s
         };
         assert_eq!(s.range_to_location(5, 10), Location::simple_span(5, 9));
-        assert_eq!(
-            s.range_to_location(5, 11).to_gb_format(),
-            "join(6..10,1)"
-        );
+        assert_eq!(s.range_to_location(5, 11).to_gb_format(), "join(6..10,1)");
         assert_eq!(
             s.range_to_location(5, 15).to_gb_format(),
             "join(6..10,1..5)"
@@ -1501,6 +1535,34 @@ mod test {
     }
 
     #[test]
+    fn extract_location() {
+        let s = Seq {
+            seq: (0..10).collect(),
+            topology: Topology::Linear,
+            features: vec![Feature {
+                location: Location::from_gb_format("1..10").unwrap(),
+                qualifiers: Vec::new(),
+                kind: "".into(),
+            }],
+            ..Seq::empty()
+        };
+        let p = |l| Location::from_gb_format(l).unwrap();
+        let e = |l| s.extract_location(&p(l)).unwrap();
+        assert_eq!(e("1..2").seq, vec![0, 1]);
+        assert_eq!(e("1..2").features[0].location, p("1..2"));
+        assert_eq!(e("complement(1..2)").seq, vec![1, 0]);
+        assert_eq!(
+            e("complement(1..2)").features[0].location,
+            p("complement(1..2)")
+        );
+        assert_eq!(e("complement(join(8..10,1..2))").seq, vec![1, 0, 9, 8, 7]);
+        assert_eq!(
+            e("join(complement(1..2),complement(8..10))").seq,
+            vec![1, 0, 9, 8, 7]
+        );
+    }
+
+    #[test]
     fn wrap_location() {
         let s = Seq {
             seq: (0..10).collect(),
@@ -1573,6 +1635,23 @@ mod test {
         assert_eq!(
             make_seq(vec![Location::Single(9)]).revcomp().features[0].location,
             Location::Complement(Box::new(Location::Single(0)))
+        );
+    }
+    #[test]
+    fn test_simplify() {
+        let s = |a, b| {
+            assert_eq!(
+                simplify(parse_location(a).unwrap()).unwrap().to_gb_format(),
+                b
+            );
+        };
+        s(b"1..5", "1..5");
+        s(b"join(1..2,2..5)", "join(1..2,2..5)");
+        s(b"join(1..2,3..5)", "1..5");
+        s(b"join(join(1..2,3..4),5)", "1..5");
+        s(
+            b"join(complement(1..2),complement(4..5))",
+            "complement(join(4..5,1..2))",
         );
     }
 }
