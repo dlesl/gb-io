@@ -19,7 +19,7 @@ circular = "0.2"
 err-derive = "0.1"
 string_cache = "0.7.3"
 log = "0.4"
-nom = "4.2.2"
+nom = "4.2.3"
 serde = { version = "1.0", optional = true, features = ["derive"] }
 bio = "0.25.0"
 
