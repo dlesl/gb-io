@@ -596,7 +596,7 @@ impl Seq {
     }
 
     /// Used by `revcomp`
-    fn revcomp_location(&self, p: Location) -> Location {
+    fn revcomp_location(&self, p: Location) -> Result<Location, LocationError> {
         let p = p
             .transform(
                 &|mut p| {
@@ -621,27 +621,28 @@ impl Seq {
                 &|v| Ok(self.len() - 1 - v),
             )
             .unwrap(); // can't fail
-        p.complement()
+        simplify(p).map(Location::complement)
     }
 
     /// Note: If this fails you won't get the original `Feature`
     /// back. If this is important, you should clone first
-    pub fn revcomp_feature(&self, f: Feature) -> Feature {
-        Feature {
-            location: self.revcomp_location(f.location),
+    pub fn revcomp_feature(&self, f: Feature) -> Result<Feature, LocationError> {
+        Ok(Feature {
+            location: self.revcomp_location(f.location)?,
             ..f
-        }
+        })
     }
 
     /// Returns the reverse complement of a `Seq`, skipping any features
     /// which can't be processed with a warning
     pub fn revcomp(&self) -> Seq {
-        let features = self
-            .features
-            .iter()
-            .cloned()
-            .map(|f| self.revcomp_feature(f))
-            .collect();
+        let mut features = Vec::with_capacity(self.features.len());
+        for f in &self.features {
+            match self.revcomp_feature(f.clone()) {
+                Ok(f) => features.push(f),
+                Err(e) => warn!("Encountered invalid feature location: {}", e)
+            }
+        }
         Seq {
             features,
             seq: revcomp(&self.seq),
