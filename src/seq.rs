@@ -98,12 +98,18 @@ pub enum Location {
     Gap(Option<i64>),
 }
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
+#[error(display = "Not configured to fetch external sequences")]
+pub struct NoFetcherError;
+
+
+
+#[derive(Debug, Error)]
 pub enum LocationError {
     #[error(display = "Can't determine location due to ambiguity: {}", _0)]
     Ambiguous(Location),
     #[error(display = "Can't resolve external location `{}`: {}", _0, _1)]
-    External(Location, String), // TODO: real error type
+    External(Location, Box<Error>),
     #[error(display = "Recursion limit reached while processing: {}", _0)]
     Recursion(Location),
     // TODO: actually implement this
@@ -748,17 +754,18 @@ impl Seq {
 
     pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
         self.extract_location_seq_fetch_external(l, &mut |_| {
-            Err("Not configured to fetch external sequences".into())
+            Err(NoFetcherError)
         })
     }
 
-    pub fn extract_location_seq_fetch_external<F>(
+    pub fn extract_location_seq_fetch_external<F, FE>(
         &self,
         l: &Location,
         ext_fetcher: &mut F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: FnMut(&str) -> Result<Seq, String>,
+        F: FnMut(&str) -> Result<Seq, FE>,
+        FE: Error + 'static
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
             let usize_or = |a: i64| -> Result<usize, LocationError> {
@@ -790,7 +797,7 @@ impl Seq {
             Complement(ref l) => revcomp(self.extract_location_seq_fetch_external(l, ext_fetcher)?),
             External(ref name, ref ext_l) => {
                 let ext_seq =
-                    ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), e))?;
+                    ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), Box::new(e)))?;
                 if let Some(ext_l) = ext_l {
                     ext_seq.extract_location_seq_fetch_external(ext_l, ext_fetcher)?
                 } else {
@@ -1065,8 +1072,8 @@ mod test {
             ..Seq::empty()
         };
         assert_eq!(
-            s.relocate_location(Location::Single(5), -9),
-            Ok(Location::Single(6))
+            s.relocate_location(Location::Single(5), -9).unwrap(),
+            Location::Single(6)
         );
         let span1 = Location::simple_span(7, 9);
         let span2 = Location::simple_span(0, 3);
@@ -1520,17 +1527,17 @@ mod test {
             topology: Topology::Linear,
             ..Seq::empty()
         };
-        assert_eq!(s.extract_location_seq(&Location::Single(0)), Ok(vec![0]));
+        assert_eq!(s.extract_location_seq(&Location::Single(0)).unwrap(), vec![0]);
         assert_eq!(
-            s.extract_location_seq(&Location::simple_span(1, 5)),
-            Ok(vec![1, 2, 3, 4, 5])
+            s.extract_location_seq(&Location::simple_span(1, 5)).unwrap(),
+            vec![1, 2, 3, 4, 5]
         );
         assert_eq!(
             s.extract_location_seq(&Location::Join(vec![
                 Location::Complement(Box::new(Location::simple_span(1, 5))),
                 Location::Single(7)
-            ])),
-            Ok(vec![5, 4, 3, 2, 1, 7])
+            ])).unwrap(),
+            vec![5, 4, 3, 2, 1, 7]
         );
     }
 
