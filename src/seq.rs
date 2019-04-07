@@ -751,30 +751,36 @@ impl Seq {
         }
     }
 
+    /// Extract the sequence specified by `l`. This version returns
+    /// `Err(LocationError::External(_, NoFetcherError))` if it
+    /// encounters a reference to an external sequence.
+    /// 
+    /// See `extract_location_with_fetcher` for details
     pub fn extract_location(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
-        self.extract_location_with_fetcher(l, |_| Err(NoFetcherError))
+        self.extract_location_with_fetcher(l, |_| Err(Box::new(NoFetcherError)))
     }
 
-    pub fn extract_location_with_fetcher<F, FE>(
+    /// Extract the sequence specified by `l`. If the location
+    /// references an external sequence, `ext_fetcher` will be called
+    /// with the name of this sequence to retrieve it.
+    pub fn extract_location_with_fetcher<'a, F>(
         &self,
         l: &Location,
         mut ext_fetcher: F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: FnMut(&str) -> Result<Seq, FE>,
-        FE: Error + 'static,
+        F: (FnMut(&str) -> Result<&'a Seq, Box<Error>>) + 'a,
     {
         self.extract_location_impl(l, &mut ext_fetcher)
     }
 
-    fn extract_location_impl<F, FE>(
+    fn extract_location_impl<'a, F>(
         &self,
         l: &Location,
         ext_fetcher: &mut F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: FnMut(&str) -> Result<Seq, FE>,
-        FE: Error + 'static,
+        F: (FnMut(&str) -> Result<&'a Seq, Box<Error>>) + 'a,
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
             let usize_or = |a: i64| -> Result<usize, LocationError> {
@@ -804,11 +810,11 @@ impl Seq {
             Complement(ref l) => revcomp(self.extract_location_impl(l, ext_fetcher)?),
             External(ref name, ref ext_l) => {
                 let ext_seq = ext_fetcher(name)
-                    .map_err(|e| LocationError::External(l.clone(), Box::new(e)))?;
+                    .map_err(|e| LocationError::External(l.clone(), e))?;
                 if let Some(ext_l) = ext_l {
                     ext_seq.extract_location_impl(ext_l, ext_fetcher)?
                 } else {
-                    ext_seq.seq
+                    ext_seq.seq.clone()
                 }
             }
             _ => return Err(LocationError::Ambiguous(l.clone())),
@@ -1451,6 +1457,23 @@ mod test {
             e("join(complement(1..2),complement(8..10))"),
             vec![1, 0, 9, 8, 7]
         );
+    }
+
+    #[test]
+    fn extract_location_external() {
+        let s = Seq {
+            seq: (0..10).collect(),
+            ..Seq::empty()
+        };
+        let s_ext = Seq {
+            seq: (10..20).collect(),
+            ..Seq::empty()
+        };
+        let l = Location::from_gb_format("TEST:1..5").unwrap();
+        assert_eq!(s.extract_location_with_fetcher(&l, |n| {
+            assert_eq!(n, "TEST");
+            Ok(&s_ext)
+        }).unwrap(), vec![10, 11, 12, 13, 14]);
     }
 
     #[test]
