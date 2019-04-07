@@ -102,8 +102,6 @@ pub enum Location {
 #[error(display = "Not configured to fetch external sequences")]
 pub struct NoFetcherError;
 
-
-
 #[derive(Debug, Error)]
 pub enum LocationError {
     #[error(display = "Can't determine location due to ambiguity: {}", _0)]
@@ -640,7 +638,7 @@ impl Seq {
         for f in &self.features {
             match self.revcomp_feature(f.clone()) {
                 Ok(f) => features.push(f),
-                Err(e) => warn!("Encountered invalid feature location: {}", e)
+                Err(e) => warn!("Encountered invalid feature location: {}", e),
             }
         }
         Seq {
@@ -753,20 +751,30 @@ impl Seq {
         }
     }
 
-    pub fn extract_location_seq(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
-        self.extract_location_seq_fetch_external(l, &mut |_| {
-            Err(NoFetcherError)
-        })
+    pub fn extract_location(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
+        self.extract_location_with_fetcher(l, |_| Err(NoFetcherError))
     }
 
-    pub fn extract_location_seq_fetch_external<F, FE>(
+    pub fn extract_location_with_fetcher<F, FE>(
+        &self,
+        l: &Location,
+        mut ext_fetcher: F,
+    ) -> Result<Vec<u8>, LocationError>
+    where
+        F: FnMut(&str) -> Result<Seq, FE>,
+        FE: Error + 'static,
+    {
+        self.extract_location_impl(l, &mut ext_fetcher)
+    }
+
+    fn extract_location_impl<F, FE>(
         &self,
         l: &Location,
         ext_fetcher: &mut F,
     ) -> Result<Vec<u8>, LocationError>
     where
         F: FnMut(&str) -> Result<Seq, FE>,
-        FE: Error + 'static
+        FE: Error + 'static,
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
             let usize_or = |a: i64| -> Result<usize, LocationError> {
@@ -789,118 +797,21 @@ impl Seq {
             Join(ref ls) => {
                 let mut res = Vec::new();
                 for l in ls {
-                    res.extend_from_slice(
-                        &self.extract_location_seq_fetch_external(l, ext_fetcher)?,
-                    );
+                    res.extend_from_slice(&self.extract_location_impl(l, ext_fetcher)?);
                 }
                 res
             }
-            Complement(ref l) => revcomp(self.extract_location_seq_fetch_external(l, ext_fetcher)?),
+            Complement(ref l) => revcomp(self.extract_location_impl(l, ext_fetcher)?),
             External(ref name, ref ext_l) => {
-                let ext_seq =
-                    ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), Box::new(e)))?;
+                let ext_seq = ext_fetcher(name)
+                    .map_err(|e| LocationError::External(l.clone(), Box::new(e)))?;
                 if let Some(ext_l) = ext_l {
-                    ext_seq.extract_location_seq_fetch_external(ext_l, ext_fetcher)?
+                    ext_seq.extract_location_impl(ext_l, ext_fetcher)?
                 } else {
                     ext_seq.seq
                 }
             }
             _ => return Err(LocationError::Ambiguous(l.clone())),
-        };
-        Ok(res)
-    }
-
-    pub fn extract_location(&self, l: &Location) -> Result<Seq, LocationError> {
-        let seq = self.extract_location_seq(l)?;
-        let mut spans = Vec::new();
-
-        fn find_spans(
-            l: &Location,
-            fwd: bool,
-            cb: &mut FnMut(i64, i64, bool) -> Result<(), LocationError>,
-        ) -> Result<(), LocationError> {
-            use Location::*;
-            match *l {
-                Single(a) => cb(a, a, fwd)?,
-                Span((a, _), (b, _)) => cb(a, b, fwd)?,
-                Join(ref ls) => {
-                    if fwd {
-                        for l in ls {
-                            find_spans(l, fwd, cb)?;
-                        }
-                    } else {
-                        for l in ls.iter().rev() {
-                            find_spans(l, fwd, cb)?;
-                        }
-                    }
-                }
-                Complement(ref b) => find_spans(b.as_ref(), !fwd, cb)?,
-                _ => return Err(LocationError::Ambiguous(l.clone())),
-            };
-            Ok(())
-        }
-        // since `extract_location_seq` worked, we know all of the ranges are valid here
-        let mut offset = 0;
-        find_spans(&l, true, &mut |from, to, fwd| {
-            spans.push((offset, from, to, fwd));
-            offset += to - from + 1;
-            Ok(())
-        })?;
-        // apparently a feature can reference a specific position more than once,
-        // for example "join(1..2, 2..3)". This is the case in 'yabP' of the 01-AUG-2014
-        // version of U00096.3. In this case, it's probably just an annotation error since it's
-        // no longer there, but we should support this anyway, since it's probably biologically
-        // possible.
-        // The solution is to merge all the intervals we're about to extract so we don't extract
-        // anything twice.
-        //
-        // sort by lower bound
-        spans.sort_by(|(_, a, ..), (_, b, ..)| a.cmp(b));
-        // merge overlapping intervals (in the same direction)
-        let mut merged = Vec::new();
-        for (offset, from, to, fwd) in spans {
-            if let Some((_, _, last_to, last_fwd)) = merged.last_mut() {
-                if from <= *last_to && fwd == *last_fwd {
-                    *last_to = cmp::max(*last_to, to);
-                    continue;
-                }
-            }
-            merged.push((offset, from, to, fwd));
-        }
-
-        let mut features = Vec::new();
-        for f in &self.features {
-            let mut locations: Vec<_> = merged
-                .iter()
-                .flat_map(|&(offset, from, to, fwd)| {
-                    f.location.truncate(from, to + 1).map(|l| {
-                        let l = l
-                            .transform(&|l| Ok(l), &|v| Ok(v - (from - offset)))
-                            .unwrap();
-                        if fwd {
-                            l
-                        } else {
-                            l.complement()
-                        }
-                    })
-                })
-                .collect();
-            if !locations.is_empty() {
-                let location = if locations.len() == 1 {
-                    locations.pop().unwrap()
-                } else {
-                    Location::Join(locations)
-                };
-                features.push(Feature {
-                    location: simplify(location)?,
-                    ..f.clone()
-                });
-            }
-        }
-        let res = Seq {
-            seq,
-            features,
-            ..Seq::empty()
         };
         Ok(res)
     }
@@ -1522,50 +1433,22 @@ mod test {
     }
 
     #[test]
-    fn extract_location_seq() {
-        let s = Seq {
-            seq: (0..10).collect(),
-            topology: Topology::Linear,
-            ..Seq::empty()
-        };
-        assert_eq!(s.extract_location_seq(&Location::Single(0)).unwrap(), vec![0]);
-        assert_eq!(
-            s.extract_location_seq(&Location::simple_span(1, 5)).unwrap(),
-            vec![1, 2, 3, 4, 5]
-        );
-        assert_eq!(
-            s.extract_location_seq(&Location::Join(vec![
-                Location::Complement(Box::new(Location::simple_span(1, 5))),
-                Location::Single(7)
-            ])).unwrap(),
-            vec![5, 4, 3, 2, 1, 7]
-        );
-    }
-
-    #[test]
     fn extract_location() {
         let s = Seq {
             seq: (0..10).collect(),
             topology: Topology::Linear,
-            features: vec![Feature {
-                location: Location::from_gb_format("1..10").unwrap(),
-                qualifiers: Vec::new(),
-                kind: "".into(),
-            }],
             ..Seq::empty()
         };
         let p = |l| Location::from_gb_format(l).unwrap();
         let e = |l| s.extract_location(&p(l)).unwrap();
-        assert_eq!(e("1..2").seq, vec![0, 1]);
-        assert_eq!(e("1..2").features[0].location, p("1..2"));
-        assert_eq!(e("complement(1..2)").seq, vec![1, 0]);
+        assert_eq!(e("1"), vec![0]);
+        assert_eq!(e("2..6"), vec![1, 2, 3, 4, 5]);
+        assert_eq!(e("join(complement(2..6),8)"), vec![5, 4, 3, 2, 1, 7]);
+        assert_eq!(e("1..2"), vec![0, 1]);
+        assert_eq!(e("complement(1..2)"), vec![1, 0]);
+        assert_eq!(e("complement(join(8..10,1..2))"), vec![1, 0, 9, 8, 7]);
         assert_eq!(
-            e("complement(1..2)").features[0].location,
-            p("complement(1..2)")
-        );
-        assert_eq!(e("complement(join(8..10,1..2))").seq, vec![1, 0, 9, 8, 7]);
-        assert_eq!(
-            e("join(complement(1..2),complement(8..10))").seq,
+            e("join(complement(1..2),complement(8..10))"),
             vec![1, 0, 9, 8, 7]
         );
     }
