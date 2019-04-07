@@ -1,5 +1,5 @@
 use bio::alphabets::dna::revcomp;
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cmp;
 use std::error::Error;
 use std::fmt;
@@ -771,30 +771,34 @@ impl Seq {
     /// 
     /// See `extract_location_with_fetcher` for details
     pub fn extract_location(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
-        self.extract_location_with_fetcher(l, |_| Err(Box::new(NoFetcherError)))
+        self.extract_location_with_fetcher(l, |_| Err::<Seq, _>(Box::new(NoFetcherError)))
     }
 
     /// Extract the sequence specified by `l`. If the location
     /// references an external sequence, `ext_fetcher` will be called
-    /// with the name of this sequence to retrieve it.
-    pub fn extract_location_with_fetcher<'a, F>(
+    /// with the name of this sequence to retrieve it. Since an external
+    /// feature may be referenced multiple times, it might be best to 
+    /// return `&Seq` or similar from `ext_fetcher`.
+    pub fn extract_location_with_fetcher<'a, F, S>(
         &self,
         l: &Location,
         mut ext_fetcher: F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: (FnMut(&str) -> Result<&'a Seq, Box<Error>>) + 'a,
+        F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
+        S: Borrow<Seq> + 'a
     {
         self.extract_location_impl(l, &mut ext_fetcher)
     }
 
-    fn extract_location_impl<'a, F>(
+    fn extract_location_impl<'a, F, S>(
         &self,
         l: &Location,
         ext_fetcher: &mut F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: (FnMut(&str) -> Result<&'a Seq, Box<Error>>) + 'a,
+        F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
+        S: Borrow<Seq> + 'a
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
             let usize_or = |a: i64| -> Result<usize, LocationError> {
@@ -826,9 +830,9 @@ impl Seq {
                 let ext_seq = ext_fetcher(name)
                     .map_err(|e| LocationError::External(l.clone(), e))?;
                 if let Some(ext_l) = ext_l {
-                    ext_seq.extract_location_impl(ext_l, ext_fetcher)?
+                    ext_seq.borrow().extract_location_impl(ext_l, ext_fetcher)?
                 } else {
-                    ext_seq.seq.clone()
+                    ext_seq.borrow().seq.clone()
                 }
             }
             _ => return Err(LocationError::Ambiguous(l.clone())),
