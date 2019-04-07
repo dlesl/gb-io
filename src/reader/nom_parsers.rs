@@ -4,7 +4,7 @@ use nom::types::CompleteByteSlice;
 use nom::{alpha, digit, line_ending, multispace, not_line_ending, space, IResult};
 use crate::seq::{
     After, Before, Date, Feature, FeatureKind, Location, QualifierKey, Reference, Seq, Source, Topology,
-    REASONABLE_SEQ_LEN,
+    REASONABLE_SEQ_LEN, GapLength
 };
 use std::cmp;
 use std::iter::once;
@@ -706,7 +706,16 @@ named!(
 // can't hurt to accept it everywhere
 named!(
     pos_gap<CompleteByteSlice, Location>,
-    do_parse!(tag!("gap(") >> size: opt!(numeric_i64!()) >> tag!(")") >> (Location::Gap(size)))
+    do_parse!(tag!("gap(") >> length: gap_length >> tag!(")") >> (Location::Gap(length)))
+);
+
+named!(
+    gap_length<CompleteByteSlice, GapLength>,
+    alt_complete!(
+        numeric_i64!() => { GapLength::Known } |
+        tag!("unk100") => { |_| GapLength::Unk100 } |
+        tag!("") => {|_| GapLength::Unknown }
+    )
 );
 
 named!(
@@ -841,6 +850,16 @@ mod test {
     fn test_date() {
         let d = date(&b"01-AUG-2014\n"[..]);
         assert_eq!(d, Ok((&b"\n"[..], Date::from_ymd(2014, 8, 1).unwrap())))
+    }
+
+    #[test]
+    fn test_gap() {
+        assert_eq!(location(CompleteByteSlice(b"gap()")), 
+            Ok((CompleteByteSlice(b""), Location::Gap(GapLength::Unknown))));
+        assert_eq!(location(CompleteByteSlice(b"gap(10)")), 
+            Ok((CompleteByteSlice(b""), Location::Gap(GapLength::Known(10)))));
+        assert_eq!(location(CompleteByteSlice(b"gap(unk100)")), 
+            Ok((CompleteByteSlice(b""), Location::Gap(GapLength::Unk100))));
     }
 
     #[test]

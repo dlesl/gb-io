@@ -65,6 +65,19 @@ impl fmt::Display for Date {
     }
 }
 
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum GapLength {
+    /// gap(n)
+    Known(i64),
+    /// gap()
+    Unknown,
+    /// gap(unk100)
+    Unk100
+}
+
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Before(pub bool);
@@ -95,7 +108,7 @@ pub enum Location {
     Bond(Vec<Location>),
     OneOf(Vec<Location>),
     External(String, Option<Box<Location>>),
-    Gap(Option<i64>),
+    Gap(GapLength),
 }
 
 #[derive(Debug, Error)]
@@ -283,8 +296,9 @@ impl Location {
                 format!("{}:{}", &name, location.to_gb_format())
             }
             Location::External(ref name, None) => format!("{}", name),
-            Location::Gap(Some(length)) => format!("gap({})", length),
-            Location::Gap(None) => format!("gap()"),
+            Location::Gap(GapLength::Known(length)) => format!("gap({})", length),
+            Location::Gap(GapLength::Unknown) => format!("gap()"),
+            Location::Gap(GapLength::Unk100) => format!("gap(unk100)"),
         }
     }
 
