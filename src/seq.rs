@@ -89,19 +89,39 @@ pub struct After(pub bool);
 /// description of what they mean.
 ///
 /// Note that locations specified here must always refer to a
-/// nucleotide within the sequence. Ranges are inclusive. To specify a
-/// range that wraps around, use join(x..last,1..y).
+/// nucleotide within the sequence. Ranges are inclusive in Genbank
+/// format, but represented as exclusive ranges, using 0-based
+/// indexing in this library. For example, `1..3` will be represented
+/// as `Range((0, Before(false)), (4, After(false)))`.
+///
+/// To specify a range that wraps around on a circular sequence,
+/// Genbank files use `join(x..last,1..y)`.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
 pub enum Location {
     /// Represents a range of positions, indicated with [<]x..[>]y in
-    /// the Genbank file
-    /// TODO: document properly
+    /// the Genbank file. If `<` or `>` are present, then `Before` or
+    /// `After` will be true, respectively. This means that the
+    /// feature starts before/extends beyond the end point. Genbank
+    /// files represent locations consisting of a single position with
+    /// a single number. In this library this is represented using
+    /// `Range`, i.e. `1` becomes `Range((0, Before(false)), (1,
+    /// After(false)))`.
     Range((i64, Before), (i64, After)),
-    /// n^n+1
+    /// Represented as `n^n+1`: This means that the location is
+    /// between the two _adjacent_ positions specified. On a circular
+    /// sequence the last and first positions are also allowed.
     Between(i64, i64),
+    /// INSDC: "Find the complement of the presented sequence in the
+    /// span specified by "location" (i.e., read the complement of
+    /// the presented strand in its 5'-to-3' direction)"
     Complement(Box<Location>),
+    /// INSDC: "The indicated elements should be joined (placed
+    /// end-to-end) to form one contiguous sequence"
     Join(Vec<Location>),
+    /// INSDC: "The elements can be found in the specified order (5'
+    /// to 3' direction), but nothing is implied about the
+    /// reasonableness about joining them"
     Order(Vec<Location>),
     Bond(Vec<Location>),
     OneOf(Vec<Location>),
