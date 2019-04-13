@@ -624,7 +624,7 @@ named!(
 
 named!(
     pos_single<CompleteByteSlice, Location>,
-    map!(numeric_i64!(), |i| Location::Span(((i - 1), Before(false)), (i, After(false)))) // Convert from 1-based
+    map!(numeric_i64!(), |i| Location::Range(((i - 1), Before(false)), (i, After(false)))) // Convert from 1-based
 ); // to 0-based
 
 named!(
@@ -656,7 +656,7 @@ named!(
         tag!("..") >>
         after: opt!(char!('>')) >>
         b: numeric_i64!() >>
-        (Location::Span((a - 1, Before(before.is_some())), (b, After(after.is_some()))))
+        (Location::Range((a - 1, Before(before.is_some())), (b, After(after.is_some()))))
     )
 );
 
@@ -988,7 +988,7 @@ mod test {
         let p = location(CompleteByteSlice(s.as_bytes()));
         match p {
             Ok((_, p)) => match p {
-                Location::Span((0, Before(false)), (1, After(false))) => {}
+                Location::Range((0, Before(false)), (1, After(false))) => {}
                 x => {
                     panic!("{:?}", x);
                 }
@@ -1003,7 +1003,7 @@ mod test {
     fn test_pos_join() {
         let s = "join(1,3)";
         let p = pos_join(CompleteByteSlice(s.as_bytes()));
-        let inner = vec![Location::simple_span(0, 1), Location::simple_span(2, 3)];
+        let inner = vec![Location::simple_range(0, 1), Location::simple_range(2, 3)];
         assert_eq!(
             p,
             Ok(((CompleteByteSlice(&b""[..])), Location::Join(inner)))
