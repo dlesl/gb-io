@@ -65,7 +65,6 @@ impl fmt::Display for Date {
     }
 }
 
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum GapLength {
@@ -74,9 +73,8 @@ pub enum GapLength {
     /// gap()
     Unknown,
     /// gap(unk100)
-    Unk100
+    Unk100,
 }
-
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -96,8 +94,6 @@ pub struct After(pub bool);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
 pub enum Location {
-    /// Just a number
-    Single(i64),
     /// n^n+1
     Between(i64, i64),
     /// [<]x..[>]y
@@ -139,6 +135,10 @@ impl Location {
         Location::Span((a, Before(false)), (b, After(false)))
     }
 
+    pub fn single(a: i64) -> Location {
+        Location::simple_span(a, a + 1)
+    }
+
     /// Try to get the outermost bounds for a location. Returns the
     /// starting and finishing locations, as inclusive sequence
     /// coordinates.
@@ -153,7 +153,6 @@ impl Location {
                 let (_, end) = last.find_bounds()?;
                 Ok((start, end))
             }
-            Location::Single(p) => Ok((p, p)),
             Location::Between(a, b) => Ok((a, b)),
             Location::Order(ref locations)
             | Location::Bond(ref locations)
@@ -198,7 +197,6 @@ impl Location {
             OneOf(ps) => OneOf(t_vec(ps)?),
             Join(ps) => Join(t_vec(ps)?),
             // Apply the value closure
-            Single(v) => Single(val(v)?),
             Between(a, b) => Between(val(a)?, val(b)?),
             Span((a, before), (b, after)) => Span((val(a)?, before), (val(b)?, after)),
             // We don't touch values here
@@ -222,13 +220,6 @@ impl Location {
             }
         };
         match *self {
-            Single(a) => {
-                if a >= start && a < end {
-                    Some(self.clone())
-                } else {
-                    None
-                }
-            }
             Between(a, b) => {
                 if (a >= start && a < end) || (b >= start && b < end) {
                     Some(self.clone())
@@ -280,12 +271,15 @@ impl Location {
                 .join(",")
         }
         match *self {
-            Location::Single(p) => format!("{}", p + 1),
             Location::Between(a, b) => format!("{}^{}", a + 1, b + 1),
             Location::Span((a, Before(before)), (b, After(after))) => {
+                if !before && !after && b == a + 1 {
+                    format!("{}", a + 1)
+                } else {
                 let before = if before { "<" } else { "" };
                 let after = if after { ">" } else { "" };
                 format!("{}{}..{}{}", before, a + 1, after, b)
+                }
             }
             Location::Complement(ref p) => format!("complement({})", p.to_gb_format()),
             Location::Join(ref locations) => format!("join({})", location_list(locations)),
@@ -528,12 +522,6 @@ impl Seq {
             .transform(
                 &|p| {
                     let res = match p {
-                        Single(mut a) => {
-                            while a >= self.len() {
-                                a -= self.len();
-                            }
-                            Single(a)
-                        }
                         Span((mut a, before), (mut b, after)) => {
                             while a >= self.len() {
                                 a -= self.len();
@@ -606,11 +594,10 @@ impl Seq {
                         _ => (),
                     };
                     let p = match p {
-                        Location::Single(a) => Location::Single(a + 1),
                         Location::Span((a, Before(before)), (b, After(after))) => {
                             Location::Span((b, Before(after)), (a, After(before)))
                         }
-                        Location::Between(a, b) => Location::Between(b, a),
+                        Location::Between(a, b) => Location::Between(b + 1, a + 1),
                         p => p,
                     };
                     Ok(p)
@@ -715,7 +702,7 @@ impl Seq {
     /// Extract the sequence specified by `l`. This version returns
     /// `Err(LocationError::External(_, NoFetcherError))` if it
     /// encounters a reference to an external sequence.
-    /// 
+    ///
     /// See `extract_location_with_fetcher` for details
     pub fn extract_location(&self, l: &Location) -> Result<Vec<u8>, LocationError> {
         self.extract_location_with_fetcher(l, |_| Err::<Seq, _>(Box::new(NoFetcherError)))
@@ -724,7 +711,7 @@ impl Seq {
     /// Extract the sequence specified by `l`. If the location
     /// references an external sequence, `ext_fetcher` will be called
     /// with the name of this sequence to retrieve it. Since an external
-    /// feature may be referenced multiple times, it might be best to 
+    /// feature may be referenced multiple times, it might be best to
     /// return `&Seq` or similar from `ext_fetcher`.
     pub fn extract_location_with_fetcher<'a, F, S>(
         &self,
@@ -733,7 +720,7 @@ impl Seq {
     ) -> Result<Vec<u8>, LocationError>
     where
         F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
-        S: Borrow<Seq> + 'a
+        S: Borrow<Seq> + 'a,
     {
         self.extract_location_impl(l, &mut ext_fetcher)
     }
@@ -745,7 +732,7 @@ impl Seq {
     ) -> Result<Vec<u8>, LocationError>
     where
         F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
-        S: Borrow<Seq> + 'a
+        S: Borrow<Seq> + 'a,
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
             let usize_or = |a: i64| -> Result<usize, LocationError> {
@@ -763,7 +750,6 @@ impl Seq {
         };
         use Location::*;
         let res = match *l {
-            Single(a) => get_range(a, a + 1)?.into(),
             Span((a, _), (b, _)) => get_range(a, b)?.into(),
             Join(ref ls) => {
                 let mut res = Vec::new();
@@ -774,8 +760,8 @@ impl Seq {
             }
             Complement(ref l) => revcomp(self.extract_location_impl(l, ext_fetcher)?),
             External(ref name, ref ext_l) => {
-                let ext_seq = ext_fetcher(name)
-                    .map_err(|e| LocationError::External(l.clone(), e))?;
+                let ext_seq =
+                    ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), e))?;
                 if let Some(ext_l) = ext_l {
                     ext_seq.borrow().extract_location_impl(ext_l, ext_fetcher)?
                 } else {
@@ -816,27 +802,6 @@ fn merge_adjacent(ps: Vec<Location>) -> Vec<Location> {
     for p in ps {
         if let Some(last) = res.last_mut() {
             match (&last, p) {
-                (Single(ref a), Single(b)) => {
-                    if *a + 1 == b {
-                        *last = Location::simple_span(*a, b + 1);
-                    } else {
-                        res.push(Single(b));
-                    }
-                }
-                (Single(ref a), Span((c, Before(false)), d)) => {
-                    if *a + 1 == c {
-                        *last = Span((*a, Before(false)), d);
-                    } else {
-                        res.push(Span((c, Before(false)), d));
-                    }
-                }
-                (Span(a, (ref b, After(false))), Single(d)) => {
-                    if *b == d {
-                        *last = Span(*a, (d + 1, After(false)));
-                    }else{
-                        res.push(Single(d));
-                    }
-                }
                 (Span(a, (ref b, After(false))), Span((c, Before(false)), d)) => {
                     if *b == c {
                         *last = Span(*a, d);
@@ -897,7 +862,6 @@ fn simplify_shallow(p: Location) -> Result<Location, LocationError> {
                 }
             }
         }
-        Span((a, Before(false)), (b, After(false))) if a + 1 == b => Ok(Single(a)),
         p => Ok(p),
     }
 }
@@ -925,15 +889,15 @@ mod test {
             vec![Location::simple_span(0, 8)]
         );
         assert_eq!(
-            merge_adjacent(vec![Location::simple_span(0, 5), Location::Single(5)]),
+            merge_adjacent(vec![Location::simple_span(0, 5), Location::single(5)]),
             vec![Location::simple_span(0, 6)]
         );
         assert_eq!(
-            merge_adjacent(vec![Single(0), Location::simple_span(1, 5)]),
+            merge_adjacent(vec![Location::single(0), Location::simple_span(1, 5)]),
             vec![Location::simple_span(0, 5)]
         );
         assert_eq!(
-            merge_adjacent(vec![Single(0), Single(1)]),
+            merge_adjacent(vec![Location::single(0), Location::single(1)]),
             vec![Location::simple_span(0, 2)]
         );
         assert_eq!(
@@ -954,8 +918,8 @@ mod test {
             ..Seq::empty()
         };
         assert_eq!(
-            s.relocate_location(Location::Single(5), -9).unwrap(),
-            Location::Single(6)
+            s.relocate_location(Location::single(5), -9).unwrap(),
+            Location::single(6)
         );
         let span1 = Location::simple_span(7, 10);
         let span2 = Location::simple_span(0, 4);
@@ -1017,8 +981,8 @@ mod test {
             "6..8"
         );
         assert_eq!(
-            s.relocate_location(Location::Single(5), -9).unwrap(),
-            Location::Single(6)
+            s.relocate_location(Location::single(5), -9).unwrap(),
+            Location::single(6)
         );
         let span1 = Location::simple_span(7, 10);
         let span2 = Location::simple_span(0, 4);
@@ -1153,10 +1117,10 @@ mod test {
         assert_eq!(res.features, vec![]);
         let res = s.extract_range(0, 1);
         assert_eq!(res.features.len(), 1);
-        assert_eq!(&res.features[0].location, &Location::Single(0));
+        assert_eq!(&res.features[0].location, &Location::single(0));
         let res = s.extract_range(3, 4);
         assert_eq!(res.features.len(), 1);
-        assert_eq!(&res.features[0].location, &Location::Single(0));
+        assert_eq!(&res.features[0].location, &Location::single(0));
         let res = s.extract_range(0, 10);
         assert_eq!(&res.features[0].location, &Location::simple_span(0, 4));
     }
@@ -1164,13 +1128,13 @@ mod test {
     #[test]
     fn truncate() {
         assert_eq!(
-            Location::Single(0).truncate(0, 1),
-            Some(Location::Single(0))
+            Location::single(0).truncate(0, 1),
+            Some(Location::single(0))
         );
-        assert_eq!(Location::Single(0).truncate(1, 2), None);
+        assert_eq!(Location::single(0).truncate(1, 2), None);
         assert_eq!(
             Location::simple_span(0, 3).truncate(1, 2),
-            Some(Location::Single(1))
+            Some(Location::single(1))
         );
         assert_eq!(
             Location::simple_span(0, 2).truncate(0, 2),
@@ -1260,7 +1224,7 @@ mod test {
                     qualifiers: Vec::new(),
                 },
                 Feature {
-                    location: Location::Single(0),
+                    location: Location::single(0),
                     kind: feature_kind!(""),
                     qualifiers: Vec::new(),
                 },
@@ -1364,10 +1328,14 @@ mod test {
             ..Seq::empty()
         };
         let l = Location::from_gb_format("TEST:1..5").unwrap();
-        assert_eq!(s.extract_location_with_fetcher(&l, |n| {
-            assert_eq!(n, "TEST");
-            Ok(&s_ext)
-        }).unwrap(), vec![10, 11, 12, 13, 14]);
+        assert_eq!(
+            s.extract_location_with_fetcher(&l, |n| {
+                assert_eq!(n, "TEST");
+                Ok(&s_ext)
+            })
+            .unwrap(),
+            vec![10, 11, 12, 13, 14]
+        );
     }
 
     #[test]
@@ -1378,23 +1346,23 @@ mod test {
             ..Seq::empty()
         };
         assert_eq!(
-            Location::Single(0),
-            s.wrap_location(Location::Single(0)).unwrap()
+            Location::single(0),
+            s.wrap_location(Location::single(0)).unwrap()
         );
         assert_eq!(
-            Location::Single(0),
-            s.wrap_location(Location::Single(10)).unwrap()
+            Location::single(0),
+            s.wrap_location(Location::single(10)).unwrap()
         );
         assert_eq!(
-            Location::Single(1),
-            s.wrap_location(Location::Single(11)).unwrap()
+            Location::single(1),
+            s.wrap_location(Location::single(11)).unwrap()
         );
         assert_eq!(
             Location::simple_span(0, 2),
             s.wrap_location(Location::simple_span(10, 12)).unwrap()
         );
         assert_eq!(
-            Location::Join(vec![Location::Single(9), Location::simple_span(0, 5)]),
+            Location::Join(vec![Location::single(9), Location::simple_span(0, 5)]),
             s.wrap_location(Location::simple_span(9, 15)).unwrap()
         );
         assert_eq!(
@@ -1408,7 +1376,7 @@ mod test {
     #[test]
     fn revcomp() {
         let make_seq = |locations: Vec<Location>| Seq {
-            seq: "aaaaaaaaat".into(),
+            seq: (0..10).collect(),
             topology: Topology::Linear,
             features: locations
                 .into_iter()
@@ -1420,6 +1388,15 @@ mod test {
                 .collect(),
             ..Seq::empty()
         };
+        let s = make_seq(vec![]);
+        assert_eq!(
+            s.revcomp_location(Location::single(0)).unwrap(),
+            Location::Complement(Box::new(Location::single(9)))
+        );
+        assert_eq!(
+            s.revcomp_location(Location::Between(0, 1)).unwrap(),
+            Location::Complement(Box::new(Location::Between(8,9)))
+        );
         assert_eq!(
             make_seq(vec![Location::simple_span(0, 2)])
                 .revcomp()
@@ -1441,8 +1418,8 @@ mod test {
             ])))
         );
         assert_eq!(
-            make_seq(vec![Location::Single(9)]).revcomp().features[0].location,
-            Location::Complement(Box::new(Location::Single(0)))
+            make_seq(vec![Location::single(9)]).revcomp().features[0].location,
+            Location::Complement(Box::new(Location::single(0)))
         );
     }
     #[test]
