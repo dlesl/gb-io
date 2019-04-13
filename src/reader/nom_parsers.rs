@@ -656,7 +656,7 @@ named!(
         tag!("..") >>
         after: opt!(char!('>')) >>
         b: numeric_i64!() >>
-        (Location::Span((a - 1, Before(before.is_some())), (b - 1, After(after.is_some()))))
+        (Location::Span((a - 1, Before(before.is_some())), (b, After(after.is_some()))))
     )
 );
 
