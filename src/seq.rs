@@ -141,24 +141,23 @@ impl Location {
         Location::simple_range(a, a + 1)
     }
 
-    /// Try to get the outermost bounds for a location. Returns the
-    /// starting and finishing locations, as inclusive sequence
-    /// coordinates.
+    /// Try to get the start and end of a location. Returns the
+    /// starting and finishing locations, as an exclusive range.
     pub fn find_bounds(&self) -> Result<(i64, i64), LocationError> {
+        use Location::*;
         match *self {
-            Location::Range((a, _), (b, _)) => Ok((a, b)),
-            Location::Complement(ref location) => location.find_bounds(),
-            Location::Join(ref locations) => {
+            Range((a, _), (b, _)) => Ok((a, b)),
+            Complement(ref location) => location.find_bounds(),
+            Join(ref locations) | Order(ref locations) => {
                 let first = locations.first().ok_or(LocationError::Empty)?;
                 let last = locations.last().unwrap();
                 let (start, _) = first.find_bounds()?;
                 let (_, end) = last.find_bounds()?;
                 Ok((start, end))
             }
-            Location::Between(a, b) => Ok((a, b)),
-            Location::Order(ref locations)
-            | Location::Bond(ref locations)
-            | Location::OneOf(ref locations) => {
+            Between(a, b) => Ok((a, b + 1)),
+            | Bond(ref locations)
+            | OneOf(ref locations) => {
                 let (left, right): (Vec<_>, Vec<_>) = locations
                     .iter()
                     .flat_map(Location::find_bounds) // This skips any Err values
