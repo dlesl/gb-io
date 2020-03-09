@@ -838,8 +838,6 @@ named!(
 
 named!(pub gb_records<Vec<Seq>>, preceded!(skip_preamble, many1!(gb)));
 
-pub type NomParser<T> = &'static (dyn Fn(&[u8]) -> IResult<&[u8], T> + 'static);
-
 named!(pub line_ending_type_hack<()>, value!((), line_ending));
 named!(pub double_slash<()>, value!((), tag!("//")));
 
@@ -1010,7 +1008,11 @@ mod test {
         );
     }
 
-    fn incomplete_test<T: ::std::fmt::Debug>(input: &[u8], remainder: &[u8], parser: NomParser<T>) {
+    fn incomplete_test<T: ::std::fmt::Debug>(
+        input: &[u8],
+        remainder: &[u8],
+        parser: impl Fn(&[u8]) -> IResult<&[u8], T>,
+    ) {
         match parser(input) {
             Ok((i, _)) => {
                 assert!(i == remainder);

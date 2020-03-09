@@ -1,8 +1,8 @@
-use nom::{self, AsChar, Offset};
 use crate::reader::nom_parsers::{
     any_field, base_count, contig_text, double_slash, feature, features_header, fill_seq_fields,
-    line_ending_type_hack, locus, origin_tag, skip_preamble, NomParser,
+    line_ending_type_hack, locus, origin_tag, skip_preamble,
 };
+use nom::{self, AsChar, IResult, Offset};
 use std::cmp;
 use std::io::Error as IoError;
 use std::io::Read;
@@ -94,10 +94,10 @@ impl<T: Read> StreamParser<T> {
         self.is_eof
     }
 
-    /// Apply a NomParser to the input. Returns Err if the NomParser fails.
+    /// Apply a nom parser to the input. Returns Err if the nom parser fails.
     fn run_parser<U>(
         &mut self,
-        parser: NomParser<U>,
+        parser: impl Fn(&[u8]) -> IResult<&[u8], U>,
         detailed_errors: bool,
     ) -> Result<U, StreamParserError> {
         use nom::Context::Code;
@@ -136,10 +136,10 @@ impl<T: Read> StreamParser<T> {
         }
     }
 
-    /// Try to apply a NomParser, returns None if the parser fails.
+    /// Try to apply a nom parser, returns None if the parser fails.
     fn try_run_parser<U>(
         &mut self,
-        parser: NomParser<U>,
+        parser: impl Fn(&[u8]) -> IResult<&[u8], U>,
         fail_on_eof: bool,
     ) -> Result<Option<U>, GbParserError> {
         match self.run_parser(parser, false) {
@@ -156,11 +156,14 @@ impl<T: Read> StreamParser<T> {
         }
     }
 
-    /// Apply a NomParser until it fails
-    fn run_parser_many0<U>(&mut self, parser: NomParser<U>) -> IoResult<Vec<U>> {
+    /// Apply a nom parser until it fails
+    fn run_parser_many0<U>(
+        &mut self,
+        parser: impl Fn(&[u8]) -> IResult<&[u8], U>,
+    ) -> IoResult<Vec<U>> {
         let mut res = Vec::new();
         loop {
-            match self.run_parser(parser, false) {
+            match self.run_parser(&parser, false) {
                 Ok(o) => {
                     res.push(o);
                 }
