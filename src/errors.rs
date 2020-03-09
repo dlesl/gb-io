@@ -7,9 +7,3 @@ pub enum GbParserError {
     #[error(display = "{}", _0)]
     Io(#[cause] io::Error),
 }
-
-impl From<io::Error> for GbParserError {
-    fn from(e: io::Error) -> GbParserError {
-        GbParserError::Io(e)
-    }
-}
