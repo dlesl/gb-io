@@ -838,7 +838,7 @@ named!(
 
 named!(pub gb_records<Vec<Seq>>, preceded!(skip_preamble, many1!(gb)));
 
-pub type NomParser<T> = &'static (Fn(&[u8]) -> IResult<&[u8], T> + 'static);
+pub type NomParser<T> = &'static (dyn Fn(&[u8]) -> IResult<&[u8], T> + 'static);
 
 named!(pub line_ending_type_hack<()>, value!((), line_ending));
 named!(pub double_slash<()>, value!((), tag!("//")));

@@ -138,7 +138,7 @@ pub enum LocationError {
     #[error(display = "Can't determine location due to ambiguity: {}", _0)]
     Ambiguous(Location),
     #[error(display = "Can't resolve external location `{}`: {}", _0, _1)]
-    External(Location, Box<Error>),
+    External(Location, Box<dyn Error>),
     #[error(display = "Recursion limit reached while processing: {}", _0)]
     Recursion(Location),
     // TODO: actually implement this
@@ -741,7 +741,7 @@ impl Seq {
         mut ext_fetcher: F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
+        F: (FnMut(&str) -> Result<S, Box<dyn Error>>) + 'a,
         S: Borrow<Seq> + 'a,
     {
         self.extract_location_impl(l, &mut ext_fetcher)
@@ -753,7 +753,7 @@ impl Seq {
         ext_fetcher: &mut F,
     ) -> Result<Vec<u8>, LocationError>
     where
-        F: (FnMut(&str) -> Result<S, Box<Error>>) + 'a,
+        F: (FnMut(&str) -> Result<S, Box<dyn Error>>) + 'a,
         S: Borrow<Seq> + 'a,
     {
         let get_range = |from: i64, to: i64| -> Result<&[u8], LocationError> {
