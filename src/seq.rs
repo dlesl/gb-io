@@ -416,6 +416,7 @@ pub struct Seq {
     pub keywords: Option<String>,
     pub references: Vec<Reference>,
     pub comments: Vec<String>,
+    #[cfg_attr(all(feature = "serde", feature = "serde_bytes"), serde(with = "serde_bytes"))]
     pub seq: Vec<u8>,
     pub contig: Option<Location>,
     pub features: Vec<Feature>,
