@@ -36,7 +36,7 @@ const POS_QUAL: &[QualifierKey] = &[
 #[derive(Debug)]
 pub struct SeqWriter<W: Write> {
     stream: W,
-    truncate: bool,
+    truncate_locus: bool,
 }
 
 impl<W: Write> SeqWriter<W> {
@@ -44,13 +44,13 @@ impl<W: Write> SeqWriter<W> {
     pub fn new(stream: W) -> Self {
         Self {
             stream,
-            truncate: true,
+            truncate_locus: true,
         }
     }
 
     /// Set the behaviour regarding locus name truncation.
     pub fn truncate_locus(&mut self, truncate: bool) -> &mut Self {
-        self.truncate = false;
+        self.truncate_locus = false;
         self
     }
 
@@ -220,7 +220,7 @@ impl<W: Write> SeqWriter<W> {
     }
 }
 
-pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
+pub fn write<T: Write>(file: T, record: &Seq) -> io::Result<()> {
     SeqWriter::new(file).write(record)
 }
 
@@ -371,4 +371,43 @@ fn wrap_text<T: Write>(
         writeln!(file)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+
+    use super::*;
+    use std::io::BufRead;
+
+    #[test]
+    fn truncate_locus() {
+        let mut seq = Seq::empty();
+        seq.name = Some(String::from("1122217.SAMN02441331.KB899611_14"));
+
+        let mut out = Vec::new();
+        SeqWriter::new(&mut out).truncate_locus(true).write(&seq).unwrap();
+
+        let mut line = String::new();
+        std::io::Cursor::new(&out).read_line(&mut line).unwrap();
+        assert_eq!(
+            line,
+            "LOCUS       1122217.SAMN02441331.KB899 0 bp            linear UNK 01-JAN-1970\n"
+        );
+    }
+
+    #[test]
+    fn no_truncate_locus() {
+        let mut seq = Seq::empty();
+        seq.name = Some(String::from("1122217.SAMN02441331.KB899611_14"));
+
+        let mut out = Vec::new();
+        SeqWriter::new(&mut out).truncate_locus(false).write(&seq).unwrap();
+
+        let mut line = String::new();
+        std::io::Cursor::new(&out).read_line(&mut line).unwrap();
+        assert_eq!(
+            line,
+            "LOCUS       1122217.SAMN02441331.KB899611_14 0 bp            linear UNK 01-JAN-1970\n"
+        );
+    }
 }
