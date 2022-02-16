@@ -31,165 +31,197 @@ const POS_QUAL: &[QualifierKey] = &[
     qualifier_key!("anticodon"),
 ];
 
-/// Ported from Biopython (InsdcIO.py)
-fn locus_line(record: &Seq) -> String {
-    let mut locus = record.name.clone().unwrap_or_else(|| {
-        record
-            .accession
-            .clone()
-            .unwrap_or_else(|| "UNTITLED".into())
-    });
-    let length = format!("{}", record.len());
-    if locus.len() + 1 + length.len() > 28 {
-        warn!("Locus name '{}' too long, truncating", locus);
-        locus = locus[..27 - length.len()].into();
-    }
 
-    if locus.split_whitespace().count() > 1 {
-        warn!("Replacing invalid whitepace in locus name with '_'");
-        locus = locus.split_whitespace().join("_");
-    }
 
-    let units = "bp"; // TODO: 'aa' support
-
-    let mol_type = if let Some(ref m) = record.molecule_type {
-        if m.len() > 7 {
-            warn!("Molecule type '{}' too long!", m);
-            ""
-        } else {
-            m
-        }
-    } else {
-        ""
-    };
-
-    let length = format!("{:>28}", length);
-    let rest = &length[locus.len()..];
-    locus.push_str(rest);
-
-    format!(
-        "LOCUS       {} {}    {:<7} {:<8} {} {}\n",
-        locus,
-        units,
-        mol_type,
-        record.topology,
-        record.division,
-        record
-            .date
-            .as_ref()
-            .unwrap_or(&Date::from_ymd(1970, 1, 1).unwrap())
-    )
+#[derive(Debug)]
+pub struct SeqWriter<W: Write> {
+    stream: W,
+    truncate: bool,
 }
 
-pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
-    // LOCUS
-
-    write!(&mut file, "{}", locus_line(record))?;
-
-    // Fields
-
-    write_field_maybe(&mut file, &record.definition, "DEFINITION")?;
-    write_field_maybe(&mut file, &record.accession, "ACCESSION")?;
-    write_field_maybe(&mut file, &record.version, "VERSION")?;
-    write_field_maybe(&mut file, &record.dblink, "DBLINK")?;
-    write_field_maybe(&mut file, &record.keywords, "KEYWORDS")?;
-    if let Some(ref source) = record.source {
-        write_field(&mut file, &source.source, "SOURCE")?;
-        write_field_maybe(&mut file, &source.organism, "  ORGANISM")?;
-    }
-    for r in &record.references {
-        write_field(&mut file, &r.description, "REFERENCE")?;
-        for a in &r.authors {
-            write_field(&mut file, a, "  AUTHORS")?;
+impl<W: Write> SeqWriter<W> {
+    /// Create a new `SeqWriter` to write GenBank files to the given stream.
+    pub fn new(stream: W) -> Self {
+        Self {
+            stream,
+            truncate: true,
         }
-        write_field_maybe(&mut file, &r.consortium, "  CONSRTM")?;
-        write_field(&mut file, &r.title, "  TITLE")?;
-        write_field_maybe(&mut file, &r.journal, "  JOURNAL")?;
-        write_field_maybe(&mut file, &r.pubmed, "   PUBMED")?; // TODO: this should be a subfield of Journal
-        write_field_maybe(&mut file, &r.remark, "  REMARK")?;
-    }
-    for comment in &record.comments {
-        write_field(&mut file, comment, "COMMENT")?;
     }
 
-    // Features
+    /// Set the behaviour regarding locus name truncation.
+    pub fn truncate_locus(&mut self, truncate: bool) -> &mut Self {
+        self.truncate = false;
+        self
+    }
 
-    if !record.features.is_empty() {
-        file.write_all(b"FEATURES             Location/Qualifiers\n")?;
-        for f in &record.features {
-            let first_indent = format!("     {:<15} ", f.kind);
-            let location = f.location.to_gb_format();
-            wrap_location(
-                &mut file,
-                &location,
-                MAX_WIDTH,
-                first_indent.as_str(),
-                QUALIFIER_INDENT,
-            )?;
-            for &(ref key, ref val) in &f.qualifiers {
-                match *val {
-                    None => writeln!(file, "{}/{}", QUALIFIER_INDENT, key)?,
-                    Some(ref val) => {
-                        let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
-                        let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);
-                        if POS_QUAL.iter().any(|x| x == key) {
-                            wrap_location(
-                                &mut file,
-                                val,
-                                MAX_WIDTH,
-                                first_indent.as_str(),
-                                QUALIFIER_INDENT,
-                            )?;
-                        } else {
-                            wrap_text(
-                                &mut file,
-                                val,
-                                MAX_WIDTH,
-                                first_indent.as_str(),
-                                QUALIFIER_INDENT,
-                                quote,
-                            )?;
+    /// Generate the locus line for the record.
+    ///
+    /// Ported from Biopython (InsdcIO.py).
+    fn locus_line(&self, record: &Seq) -> String {
+        let mut locus = record.name.clone().unwrap_or_else(|| {
+            record
+                .accession
+                .clone()
+                .unwrap_or_else(|| "UNTITLED".into())
+        });
+        let length = format!("{}", record.len());
+        if locus.len() + 1 + length.len() > 28 {
+            warn!("Locus name '{}' too long, truncating", locus);
+            locus = locus[..27 - length.len()].into();
+        }
+
+        if locus.split_whitespace().count() > 1 {
+            warn!("Replacing invalid whitepace in locus name with '_'");
+            locus = locus.split_whitespace().join("_");
+        }
+
+        let units = "bp"; // TODO: 'aa' support
+
+        let mol_type = if let Some(ref m) = record.molecule_type {
+            if m.len() > 7 {
+                warn!("Molecule type '{}' too long!", m);
+                ""
+            } else {
+                m
+            }
+        } else {
+            ""
+        };
+
+        let length = format!("{:>28}", length);
+        let rest = &length[locus.len()..];
+        locus.push_str(rest);
+
+        format!(
+            "LOCUS       {} {}    {:<7} {:<8} {} {}\n",
+            locus,
+            units,
+            mol_type,
+            record.topology,
+            record.division,
+            record
+                .date
+                .as_ref()
+                .unwrap_or(&Date::from_ymd(1970, 1, 1).unwrap())
+        )
+    }
+
+    /// Write the sequence to the stream.
+    pub fn write(&mut self, record: &Seq) -> io::Result<()> {
+        // LOCUS
+
+        let locus_line = self.locus_line(record);
+        write!(&mut self.stream, "{}", locus_line)?;
+
+        // Fields
+
+        write_field_maybe(&mut self.stream, &record.definition, "DEFINITION")?;
+        write_field_maybe(&mut self.stream, &record.accession, "ACCESSION")?;
+        write_field_maybe(&mut self.stream, &record.version, "VERSION")?;
+        write_field_maybe(&mut self.stream, &record.dblink, "DBLINK")?;
+        write_field_maybe(&mut self.stream, &record.keywords, "KEYWORDS")?;
+        if let Some(ref source) = record.source {
+            write_field(&mut self.stream, &source.source, "SOURCE")?;
+            write_field_maybe(&mut self.stream, &source.organism, "  ORGANISM")?;
+        }
+        for r in &record.references {
+            write_field(&mut self.stream, &r.description, "REFERENCE")?;
+            for a in &r.authors {
+                write_field(&mut self.stream, a, "  AUTHORS")?;
+            }
+            write_field_maybe(&mut self.stream, &r.consortium, "  CONSRTM")?;
+            write_field(&mut self.stream, &r.title, "  TITLE")?;
+            write_field_maybe(&mut self.stream, &r.journal, "  JOURNAL")?;
+            write_field_maybe(&mut self.stream, &r.pubmed, "   PUBMED")?; // TODO: this should be a subfield of Journal
+            write_field_maybe(&mut self.stream, &r.remark, "  REMARK")?;
+        }
+        for comment in &record.comments {
+            write_field(&mut self.stream, comment, "COMMENT")?;
+        }
+
+        // Features
+
+        if !record.features.is_empty() {
+            self.stream.write_all(b"FEATURES             Location/Qualifiers\n")?;
+            for f in &record.features {
+                let first_indent = format!("     {:<15} ", f.kind);
+                let location = f.location.to_gb_format();
+                wrap_location(
+                    &mut self.stream,
+                    &location,
+                    MAX_WIDTH,
+                    first_indent.as_str(),
+                    QUALIFIER_INDENT,
+                )?;
+                for &(ref key, ref val) in &f.qualifiers {
+                    match *val {
+                        None => write!(&mut self.stream, "{}/{}\n", QUALIFIER_INDENT, key)?,
+                        Some(ref val) => {
+                            let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
+                            let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);
+                            if POS_QUAL.iter().any(|x| x == key) {
+                                wrap_location(
+                                    &mut self.stream,
+                                    val,
+                                    MAX_WIDTH,
+                                    first_indent.as_str(),
+                                    QUALIFIER_INDENT,
+                                )?;
+                            } else {
+                                wrap_text(
+                                    &mut self.stream,
+                                    val,
+                                    MAX_WIDTH,
+                                    first_indent.as_str(),
+                                    QUALIFIER_INDENT,
+                                    quote,
+                                )?;
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    // CONTIG, maybe
+        // CONTIG, maybe
 
-    if let Some(ref contig) = record.contig {
-        wrap_location(
-            &mut file,
-            &contig.to_gb_format(),
-            MAX_WIDTH,
-            "CONTIG      ",
-            FIELD_INDENT,
-        )?;
-    }
-
-    // ORIGIN
-
-    if !record.seq.is_empty() {
-        let mut line = Vec::with_capacity(79);
-        write!(&mut line, "ORIGIN      ")?;
-        for (i, &b) in record.seq.iter().enumerate() {
-            if i % 60 == 0 {
-                line.push(b'\n');
-                file.write_all(&line)?;
-                line.clear();
-                write!(&mut line, "{:>9}", i + 1)?;
-            }
-            if i % 10 == 0 {
-                line.push(b' ');
-            }
-            line.push(b);
+        if let Some(ref contig) = record.contig {
+            wrap_location(
+                &mut self.stream,
+                &contig.to_gb_format(),
+                MAX_WIDTH,
+                "CONTIG      ",
+                FIELD_INDENT,
+            )?;
         }
-        line.push(b'\n');
-        file.write_all(&line)?;
+
+        // ORIGIN
+
+        if !record.seq.is_empty() {
+            let mut line = Vec::with_capacity(79);
+            write!(&mut line, "ORIGIN      ")?;
+            for (i, &b) in record.seq.iter().enumerate() {
+                if i % 60 == 0 {
+                    line.push(b'\n');
+                    self.stream.write_all(&line)?;
+                    line.clear();
+                    write!(&mut line, "{:>9}", i + 1)?;
+                }
+                if i % 10 == 0 {
+                    line.push(b' ');
+                }
+                line.push(b);
+            }
+            line.push(b'\n');
+            self.stream.write_all(&line)?;
+        }
+        writeln!(&mut self.stream, "//")?;
+        Ok(())
     }
-    writeln!(file, "//")?;
-    Ok(())
+}
+
+pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
+    SeqWriter::new(file).write(record)
 }
 
 fn write_field<T>(mut file: T, field: &str, keyword: &str) -> io::Result<()>
