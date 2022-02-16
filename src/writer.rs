@@ -53,13 +53,14 @@ impl<W: Write> SeqWriter<W> {
     /// Set the behaviour regarding locus name truncation.
     ///
     /// If `true` (the default when creating a `SeqWriter`, for backwards
-    /// compatibility), the locus will be truncated so that the LOCUS line is
-    /// no longer than 79 characters.
+    /// compatibility), the locus fields (`name` and `molecule_type`) will be
+    /// truncated if they are too long so that the LOCUS line is no longer
+    /// than 79 characters.
     ///
-    /// By setting `truncate` to `false`, the full locus is written to the
+    /// By setting `truncate` to `false`, the full strings are written to the
     /// LOCUS line, resulting in fields that may not in usual positions if
-    /// the locus is too long. Most parsers (including `gb-io` and Biopython)
-    /// will however be able to process these.
+    /// the name or molecule types are too long. Most parsers (including `gb-io`
+    /// and Biopython) should however be able to process these.
     pub fn truncate_locus(&mut self, truncate: bool) -> &mut Self {
         self.truncate_locus = truncate;
         self
@@ -91,29 +92,22 @@ impl<W: Write> SeqWriter<W> {
         let length = format!("{}", record.len());
         if self.truncate_locus {
             if locus.len() + 1 + length.len() > 28 {
-                warn!("Locus name '{}' too long, truncating", locus);
                 locus = locus[..27 - length.len()].into();
             }
         }
 
         if self.escape_locus {
             if locus.split_whitespace().count() > 1 {
-                warn!("Replacing invalid whitepace in locus name with '_'");
                 locus = locus.split_whitespace().join("_");
             }
         }
 
         let units = "bp"; // TODO: 'aa' support
 
-        let mol_type = if let Some(ref m) = record.molecule_type {
-            if m.len() > 7 {
-                warn!("Molecule type '{}' too long!", m);
-                ""
-            } else {
-                m
-            }
-        } else {
-            ""
+        let mol_type = match record.molecule_type {
+            Some(ref m) if m.len() > 7 && self.truncate_locus => "",
+            Some(ref m) => m,
+            None => ""
         };
 
         if locus.len() + 1 + length.len() >= 28 {
