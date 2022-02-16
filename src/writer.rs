@@ -50,7 +50,7 @@ impl<W: Write> SeqWriter<W> {
 
     /// Set the behaviour regarding locus name truncation.
     pub fn truncate_locus(&mut self, truncate: bool) -> &mut Self {
-        self.truncate_locus = false;
+        self.truncate_locus = truncate;
         self
     }
 
@@ -65,9 +65,11 @@ impl<W: Write> SeqWriter<W> {
                 .unwrap_or_else(|| "UNTITLED".into())
         });
         let length = format!("{}", record.len());
-        if locus.len() + 1 + length.len() > 28 {
-            warn!("Locus name '{}' too long, truncating", locus);
-            locus = locus[..27 - length.len()].into();
+        if self.truncate_locus {
+            if locus.len() + 1 + length.len() > 28 {
+                warn!("Locus name '{}' too long, truncating", locus);
+                locus = locus[..27 - length.len()].into();
+            }
         }
 
         if locus.split_whitespace().count() > 1 {
@@ -88,9 +90,14 @@ impl<W: Write> SeqWriter<W> {
             ""
         };
 
-        let length = format!("{:>28}", length);
-        let rest = &length[locus.len()..];
-        locus.push_str(rest);
+        if locus.len() + 1 + length.len() >= 28 {
+            let length = format!(" {}", length);
+            locus.push_str(&length);
+        } else {
+            let length = format!("{:>28}", length);
+            let rest = &length[locus.len()..];
+            locus.push_str(rest);
+        }
 
         format!(
             "LOCUS       {} {}    {:<7} {:<8} {} {}\n",
