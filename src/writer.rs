@@ -37,6 +37,7 @@ const POS_QUAL: &[QualifierKey] = &[
 pub struct SeqWriter<W: Write> {
     stream: W,
     truncate_locus: bool,
+    escape_locus: bool,
 }
 
 impl<W: Write> SeqWriter<W> {
@@ -45,12 +46,35 @@ impl<W: Write> SeqWriter<W> {
         Self {
             stream,
             truncate_locus: true,
+            escape_locus: true,
         }
     }
 
     /// Set the behaviour regarding locus name truncation.
+    ///
+    /// If `true` (the default when creating a `SeqWriter`, for backwards
+    /// compatibility), the locus will be truncated so that the LOCUS line is
+    /// no longer than 79 characters.
+    ///
+    /// By setting `truncate` to `false`, the full locus is written to the
+    /// LOCUS line, resulting in fields that may not in usual positions if
+    /// the locus is too long. Most parsers (including `gb-io` and Biopython)
+    /// will however be able to process these.
     pub fn truncate_locus(&mut self, truncate: bool) -> &mut Self {
         self.truncate_locus = truncate;
+        self
+    }
+
+    /// Set the behaviour regarding locus name escaping.
+    ///
+    /// If `true` (the default when creating a `SeqWriter`, for backwards
+    /// compatibility), any whitespace in the locus will be escaped with
+    /// and underscore (_).
+    ///
+    /// Set to `false` to write the locus as-is, which could result in an
+    /// invalid LOCUS line that some parsers may not be able to process.
+    pub fn escape_locus(&mut self, escape: bool) -> &mut Self {
+        self.escape_locus = escape;
         self
     }
 
@@ -72,9 +96,11 @@ impl<W: Write> SeqWriter<W> {
             }
         }
 
-        if locus.split_whitespace().count() > 1 {
-            warn!("Replacing invalid whitepace in locus name with '_'");
-            locus = locus.split_whitespace().join("_");
+        if self.escape_locus {
+            if locus.split_whitespace().count() > 1 {
+                warn!("Replacing invalid whitepace in locus name with '_'");
+                locus = locus.split_whitespace().join("_");
+            }
         }
 
         let units = "bp"; // TODO: 'aa' support
