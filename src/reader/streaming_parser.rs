@@ -146,13 +146,13 @@ impl<T: Read> StreamParser<T> {
             Ok(o) => Ok(Some(o)),
             Err(StreamParserError::EOF) => {
                 if fail_on_eof {
-                    Err(StreamParserError::EOF)?
+                    Err(StreamParserError::EOF.into())
                 } else {
                     Ok(None)
                 }
             }
             Err(StreamParserError::StreamParser(_, _)) => Ok(None),
-            Err(StreamParserError::Io(e)) => Err(StreamParserError::Io(e))?,
+            Err(StreamParserError::Io(e)) => Err(StreamParserError::Io(e).into()),
         }
     }
 
@@ -204,7 +204,7 @@ impl<T: Read> StreamParser<T> {
                             "Unexpected char '{}' ({}) in sequence",
                             String::from_utf8_lossy(&[x]), // Only display printable chars
                             x
-                        )))?;
+                        )));
                     }
                 }
                 bytes_read += 1;
@@ -218,7 +218,7 @@ impl<T: Read> StreamParser<T> {
                             "Got {} bytes of sequence, LOCUS promised {}",
                             s.len(),
                             len
-                        )))?;
+                        )));
                     }
                 }
                 break;
@@ -229,7 +229,7 @@ impl<T: Read> StreamParser<T> {
                     break;
                 } else {
                     // We don't know the length, so we can't know if we have everything
-                    return Err(GbParserError::SyntaxError(format!("Unexpected EOF!")))?;
+                    return Err(GbParserError::SyntaxError(format!("Unexpected EOF!")));
                 }
             }
         }
@@ -245,7 +245,7 @@ impl<T: Read> StreamParser<T> {
                 return Ok(None);
             }
             Err(e) => {
-                return Err(e)?;
+                return Err(e.into());
             }
         };
         let seq = Seq {

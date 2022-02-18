@@ -7,6 +7,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::useless_format))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::upper_case_acronyms))]
 #![recursion_limit = "128"]
 extern crate circular;
 #[macro_use]

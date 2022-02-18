@@ -69,17 +69,17 @@ macro_rules! map_res_custom_error (
     }
   );
   ($i:expr, $e:expr, $submac:ident!( $($args:tt)* ), $g:expr) => (
-    map_res_custom_error!(__impl $i, $e, $submac!($($args)*), call!($g));
+    map_res_custom_error!(__impl $i, $e, $submac!($($args)*), call!($g))
   );
   ($i:expr, $e:expr, $submac:ident!( $($args:tt)* ), $submac2:ident!( $($args2:tt)* )) => (
-    map_res_custom_error!(__impl $i, $e, $submac!($($args)*), $submac2!($($args2)*));
+    map_res_custom_error!(__impl $i, $e, $submac!($($args)*), $submac2!($($args2)*))
   );
   ($i:expr, $e:expr, $f:expr, $g:expr) => (
-    map_res_custom_error!(__impl $i, $e, call!($f), call!($g));
+    map_res_custom_error!(__impl $i, $e, call!($f), call!($g))
   );
   ($i:expr, $e:expr, $f:expr, $submac:ident!( $($args:tt)* )) => (
-    map_res_custom_error!(__impl $i, call!($f), $submac!($($args)*));
-  );
+    map_res_custom_error!(__impl $i, call!($f), $submac!($($args)*))
+  )
 );
 
 macro_rules! to_str (
@@ -90,8 +90,8 @@ macro_rules! to_str (
         )
     );
     ($i:expr, $f:expr) => (
-        to_str!($i, call!($f));
-    );
+        to_str!($i, call!($f))
+    )
 );
 
 macro_rules! to_string (
@@ -102,6 +102,6 @@ macro_rules! to_string (
         )
     );
     ($i:expr, $f:expr) => (
-        to_str!($i, call!($f));
-    );
+        to_str!($i, call!($f))
+    )
 );

@@ -128,7 +128,7 @@ pub fn write<T: Write>(mut file: T, record: &Seq) -> io::Result<()> {
             )?;
             for &(ref key, ref val) in &f.qualifiers {
                 match *val {
-                    None => write!(file, "{}/{}\n", QUALIFIER_INDENT, key)?,
+                    None => writeln!(file, "{}/{}", QUALIFIER_INDENT, key)?,
                     Some(ref val) => {
                         let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
                         let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);

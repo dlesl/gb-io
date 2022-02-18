@@ -27,7 +27,7 @@ impl Date {
     /// Construct from a calendar date, checks that the numbers look
     /// reasonable but nothing too exhaustive
     pub fn from_ymd(year: i32, month: u32, day: u32) -> Result<Date, DateError> {
-        if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+        if (1..=12).contains(&month) && (1..=31).contains(&day) {
             Ok(Date { year, month, day })
         } else {
             Err(DateError)
@@ -562,7 +562,7 @@ impl Seq {
                     };
                     Ok(res)
                 },
-                &|v| Ok(v),
+                &Ok,
             )
             .unwrap();
         simplify(res)
@@ -594,10 +594,10 @@ impl Seq {
             while shift >= self.len() {
                 shift -= self.len();
             }
-            let moved = p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap(); // can't fail
+            let moved = p.transform(&Ok, &|v| Ok(v + shift)).unwrap(); // can't fail
             self.wrap_location(moved)
         } else {
-            Ok(p.transform(&|p| Ok(p), &|v| Ok(v + shift)).unwrap())
+            Ok(p.transform(&Ok, &|v| Ok(v + shift)).unwrap())
         }
     }
 
@@ -854,7 +854,7 @@ fn flatten_join(v: Vec<Location>) -> Vec<Location> {
 /// This doesn't simplify everything yet...
 /// TODO: return original Location somehow on failure
 fn simplify(p: Location) -> Result<Location, LocationError> {
-    p.transform(&simplify_shallow, &|v| Ok(v))
+    p.transform(&simplify_shallow, &Ok)
 }
 
 fn simplify_shallow(p: Location) -> Result<Location, LocationError> {
@@ -875,7 +875,7 @@ fn simplify_shallow(p: Location) -> Result<Location, LocationError> {
                 //if everything is 'complement', reverse the order and move it outside
                 if xs
                     .iter()
-                    .all(|x| if let Complement(_) = x { true } else { false })
+                    .all(|x| matches!(x, Complement(_)))
                 {
                     xs = xs.into_iter().rev().map(Location::complement).collect();
                     Ok(Join(xs).complement())

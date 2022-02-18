@@ -121,14 +121,14 @@ named!(
                 >> len: numeric_usize
                 >> tag!("bp")
                 >> mol: molecule_type
-                >> topo: topology
+                >> topology: topology
                 >> section: opt!(to_str!(alpha))
                 >> date: opt!(date)
                 >> (Locus {
                     name: Some(String::from(name)),
                     len: Some(len),
-                    topology: topo,
-                    date: date,
+                    topology,
+                    date,
                     molecule_type: Some(mol.into()),
                     division: section.unwrap_or("UNK").into(),
                 })
@@ -209,7 +209,7 @@ named_args!(field<'a>(indent: usize, name: &str, keep_ws: bool) <String>,
 /// Concatenates lines, optionally interpolating with newlines
 fn concat_lines<'a, T: Iterator<Item = &'a [u8]>>(lines: T, keep_linebreaks: bool) -> Vec<u8> {
     if keep_linebreaks {
-        lines.intersperse(b"\n")
+        Itertools::intersperse(lines, b"\n")
             .flatten()
             .cloned()
             .collect()
@@ -256,13 +256,13 @@ named!(
             >> pubmed: opt!(apply!(field, 3, "PUBMED", false))
             >> remark: opt!(apply!(field, 2, "REMARK", true))
             >> (Reference {
-                description: description,
-                authors: authors,
-                consortium: consortium,
-                title: title,
-                journal: journal,
-                pubmed: pubmed,
-                remark: remark,
+                description,
+                authors,
+                consortium,
+                title,
+                journal,
+                pubmed,
+                remark,
             })
     )
 );
@@ -296,8 +296,8 @@ named!(
         source: apply!(field, 0, "SOURCE", true)
             >> organism: opt!(apply!(field, 2, "ORGANISM", true))
             >> (Field::SOURCE(Source {
-                source: source,
-                organism: organism,
+                source,
+                organism,
             }))
     )
 );
@@ -555,7 +555,7 @@ named!(
     )
 );
 
-fn qualifier<'a>(i: &'a [u8], indent: usize) -> IResult<&'a [u8], (QualifierKey, Option<String>)> {
+fn qualifier(i: &[u8], indent: usize) -> IResult<&[u8], (QualifierKey, Option<String>)> {
     do_parse!(
         i,
         apply!(space_indent, indent)
@@ -568,17 +568,17 @@ fn qualifier<'a>(i: &'a [u8], indent: usize) -> IResult<&'a [u8], (QualifierKey,
                             apply!(qualifier_value_quoted, indent, &QualifierKind::from(&key))  |
                             apply!(qualifier_value_bare, indent)
                             )
-                    ) => { |v| Some(v) } |
+                    ) => { Some } |
                     line_ending => {|_| None }
               )
             >> (key, val)
     )
 }
 
-fn qualifiers<'a>(
-    i: &'a [u8],
+fn qualifiers(
+    i: &[u8],
     indent: usize,
-) -> IResult<&'a [u8], Vec<(QualifierKey, Option<String>)>> {
+) -> IResult<&[u8], Vec<(QualifierKey, Option<String>)>> {
     fold_many0!(
         i,
         apply!(qualifier, indent),
@@ -608,9 +608,9 @@ named!(
             >> indent: value!(spaces_before + kind.len() + spaces_after)
             >> location: apply!(pos_text, indent)
             >> qualifiers: apply!(qualifiers, indent) >> (Feature {
-            kind: kind,
-            location: location,
-            qualifiers: qualifiers,
+            kind,
+            location,
+            qualifiers,
         })
     )
 );
@@ -755,7 +755,7 @@ named!(
             line_ending >>
             (None)
         ) |
-        apply!(toplevel_field, "ORIGIN", true) => { |s| Some(s) }
+        apply!(toplevel_field, "ORIGIN", true) => { Some }
     )
 );
 
@@ -829,7 +829,7 @@ named!(
                 molecule_type: locus.molecule_type,
                 division: locus.division,
                 seq: origin.map(|o| o.1).unwrap_or_default(),
-                contig: contig,
+                contig,
                 features: features.unwrap_or_default(),
                 ..metadata
             })
