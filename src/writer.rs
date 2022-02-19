@@ -45,7 +45,7 @@ impl<W: Write> SeqWriter<W> {
     pub fn new(stream: W) -> Self {
         Self {
             stream,
-            truncate_locus: true,
+            truncate_locus: false,
             escape_locus: true,
         }
     }
@@ -182,7 +182,7 @@ impl<W: Write> SeqWriter<W> {
                 )?;
                 for &(ref key, ref val) in &f.qualifiers {
                     match *val {
-                        None => write!(&mut self.stream, "{}/{}\n", QUALIFIER_INDENT, key)?,
+                        None => writeln!(&mut self.stream, "{}/{}", QUALIFIER_INDENT, key)?,
                         Some(ref val) => {
                             let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
                             let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);

@@ -29,7 +29,7 @@ include!(concat!(env!("OUT_DIR"), "/atoms.rs")); // for QualifierKey, FeatureKin
 
 pub mod seq;
 pub mod reader;
-mod writer;
+pub mod writer;
 
 #[cfg(test)]
 pub mod tests {
