@@ -90,16 +90,12 @@ impl<W: Write> SeqWriter<W> {
                 .unwrap_or_else(|| "UNTITLED".into())
         });
         let length = format!("{}", record.len());
-        if self.truncate_locus {
-            if locus.len() + 1 + length.len() > 28 {
-                locus = locus[..27 - length.len()].into();
-            }
+        if self.truncate_locus && locus.len() + 1 + length.len() > 28 {
+            locus = locus[..27 - length.len()].into();
         }
 
-        if self.escape_locus {
-            if locus.split_whitespace().count() > 1 {
-                locus = locus.split_whitespace().join("_");
-            }
+        if self.escape_locus && locus.split_whitespace().count() > 1 {
+            locus = locus.split_whitespace().join("_");
         }
 
         let units = "bp"; // TODO: 'aa' support
