@@ -1,14 +1,14 @@
 [package]
 edition = "2018"
 name = "gb-io"
-version = "0.6.0"
+version = "0.7.0"
 license = "MIT"
 authors = ["David Leslie"]
 homepage = "https://github.com/dlesl/gb-io"
 repository = "https://github.com/dlesl/gb-io"
 description = "A library for parsing, writing and manipulating Genbank sequence files"
 build = "build.rs"
-exclude = ["tests/*"]
+exclude = ["tests/*", ".github/*"]
 
 [build-dependencies]
 string_cache_codegen = "0.5"
