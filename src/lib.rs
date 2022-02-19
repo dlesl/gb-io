@@ -21,7 +21,6 @@ extern crate nom;
 #[macro_use]
 extern crate serde;
 extern crate string_cache;
-extern crate bio;
 
 mod errors;
 
@@ -30,6 +29,7 @@ include!(concat!(env!("OUT_DIR"), "/atoms.rs")); // for QualifierKey, FeatureKin
 pub mod seq;
 pub mod reader;
 pub mod writer;
+mod dna;
 
 #[cfg(test)]
 pub mod tests {

@@ -22,7 +22,6 @@ log = "0.4"
 nom = "4.2.3"
 serde = { version = "1", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11", optional = true }
-bio = "0.39"
 
 [features]
 default = ["serde", "serde_bytes"]

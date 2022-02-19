@@ -1,4 +1,3 @@
-use bio::alphabets::dna::revcomp;
 use std::borrow::{Borrow, Cow};
 use std::cmp;
 use std::error::Error;
@@ -9,6 +8,7 @@ use std::str;
 
 use crate::errors::GbParserError;
 use crate::reader::parse_location;
+use crate::dna::revcomp;
 pub use crate::{FeatureKind, QualifierKey};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -780,7 +780,7 @@ impl Seq {
                 }
                 res
             }
-            Complement(ref l) => revcomp(self.extract_location_impl(l, ext_fetcher)?),
+            Complement(ref l) => revcomp(&self.extract_location_impl(l, ext_fetcher)?),
             External(ref name, ref ext_l) => {
                 let ext_seq =
                     ext_fetcher(name).map_err(|e| LocationError::External(l.clone(), e))?;

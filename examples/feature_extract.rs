@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate gb_io;
-extern crate bio;
 
 use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
