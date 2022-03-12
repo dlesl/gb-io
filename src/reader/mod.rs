@@ -5,8 +5,9 @@ mod errors;
 mod nom_parsers;
 mod streaming_parser;
 use self::streaming_parser::StreamParser;
-use crate::errors::GbParserError;
 use crate::seq::{Location, Seq};
+
+pub use crate::errors::GbParserError;
 
 #[derive(Debug)]
 pub struct SeqReader<T: Read> {
