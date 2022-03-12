@@ -31,3 +31,7 @@ fn main() {
     }
 }
 ```
+
+### Python bindings
+[Martin Larralde](https://github.com/althonos) has written [Python
+bindings](https://pypi.org/project/gb-io/) for `gb-io`'s parser.
