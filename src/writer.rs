@@ -300,11 +300,10 @@ fn wrap_location<T: Write>(
 }
 
 /// Wrap a line of text in a Genbank file. The line is appended to `line`, which
-/// may already contain up to `max_len` - 1 bytes. Wrapping occurs on a space if
-/// possible. Outputs valid UTF-8, however lines are wrapped to their length in
-/// bytes, not characters, and UTF-8 characters that consist of multiple `char`s
-/// are likely to get mangled. Returns the rest of `input`. If `quote` is set,
-/// `"` will be escaped with `""`
+/// may already contain up to `max_len` - 1 bytes. Outputs valid UTF-8, however
+/// lines are wrapped to their length in bytes, not characters, and UTF-8
+/// characters that consist of multiple `char`s are likely to get mangled.
+/// Returns the rest of `input`. If `quote` is set, `"` will be escaped with `""`
 fn wrap_get_line<'a>(line: &mut String, input: &'a str, max_len: usize, quote: bool) -> &'a str {
     assert!(line.len() < max_len);
     let mut consumed = 0;
@@ -356,7 +355,7 @@ fn wrap_get_line<'a>(line: &mut String, input: &'a str, max_len: usize, quote: b
     // try to wrap at last space
     if let Some(last_space_in) = last_space_in {
         line.truncate(last_space_out);
-        &input[last_space_in + 1..]
+        &input[last_space_in..]
     } else {
         // there's no way to split the line nicely
         &input[consumed..]
@@ -400,7 +399,40 @@ fn wrap_text<T: Write>(
 pub mod tests {
 
     use super::*;
-    use std::io::BufRead;
+    use crate::reader::SeqReader;
+    use crate::seq::{Feature, Location, Seq};
+    use std::io::Read;
+    use std::io::{BufRead, BufReader};
+
+    #[test]
+    fn multiline_spaces_retained_after_roundtrip() {
+        // ensures that qualifier values that are split across multiple lines when writing
+        // don't lose any spaces when they're parsed again
+        let product = "Lipopolysaccharide export system ATP-binding protein LptB".to_string();
+        let feat = Feature {
+            kind: feature_kind!("CDS"),
+            location: Location::simple_range(100, 200),
+            qualifiers: vec![(qualifier_key!("product"), Some(product.clone()))],
+        };
+        let mut seq = Seq::empty();
+        seq.features = vec![feat];
+        let mut out = Vec::new();
+        SeqWriter::new(&mut out).write(&seq).unwrap();
+        let mut text = String::new();
+        std::io::Cursor::new(&out)
+            .read_to_string(&mut text)
+            .unwrap();
+
+        let buf = BufReader::new(text.as_bytes());
+        let mut roundtrip_seq = SeqReader::new(buf);
+        let record = roundtrip_seq.next().unwrap().unwrap();
+        let roundtrip_product = record.features[0]
+            .qualifier_values(qualifier_key!("product"))
+            .next()
+            .unwrap()
+            .replace('\n', "");
+        assert_eq!(product, roundtrip_product);
+    }
 
     #[test]
     fn truncate_locus() {
