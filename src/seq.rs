@@ -12,7 +12,7 @@ use crate::dna::revcomp;
 pub use crate::{FeatureKind, QualifierKey};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// A very simple Date struct so we don't have to rely on chrono
 pub struct Date {
     year: i32,
@@ -20,7 +20,7 @@ pub struct Date {
     day: u32,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DateError;
 
 impl Date {
@@ -66,7 +66,7 @@ impl fmt::Display for Date {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum GapLength {
     /// gap(n)
     Known(i64),
@@ -77,10 +77,10 @@ pub enum GapLength {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Before(pub bool);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct After(pub bool);
 
 /// Represents a Genbank "location", used to specify the location of
@@ -351,7 +351,7 @@ impl Feature {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Topology {
     Linear,
     Circular,
@@ -368,14 +368,14 @@ impl fmt::Display for Topology {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Source {
     pub source: String,
     pub organism: Option<String>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Reference {
     pub description: String,
     pub authors: Option<String>,
