@@ -238,8 +238,8 @@ impl<T: Read> StreamParser<T> {
 
     pub fn read_one_record(&mut self) -> Result<Option<Seq>, GbParserError> {
         // skip preamble such as the header of Genbank .SEQ files
-        self.try_run_parser(&skip_preamble, false)?;
-        let locus = match self.run_parser(&locus, true) {
+        self.try_run_parser(skip_preamble, false)?;
+        let locus = match self.run_parser(locus, true) {
             Ok(locus) => locus,
             Err(StreamParserError::EOF) => {
                 return Ok(None);
@@ -257,14 +257,14 @@ impl<T: Read> StreamParser<T> {
             division: locus.division,
             ..Seq::empty()
         };
-        let fields = self.run_parser_many0(&any_field)?;
+        let fields = self.run_parser_many0(any_field)?;
         let mut seq = fill_seq_fields(seq, fields).map_err(GbParserError::SyntaxError)?; //TODO: Proper error handling
-        if self.try_run_parser(&features_header, true)?.is_some() {
-            seq.features = self.run_parser_many0(&feature)?;
+        if self.try_run_parser(features_header, true)?.is_some() {
+            seq.features = self.run_parser_many0(feature)?;
         }
-        self.try_run_parser(&base_count, true)?;
-        seq.contig = self.try_run_parser(&contig_text, true)?;
-        if self.try_run_parser(&origin_tag, true)?.is_some() {
+        self.try_run_parser(base_count, true)?;
+        seq.contig = self.try_run_parser(contig_text, true)?;
+        if self.try_run_parser(origin_tag, true)?.is_some() {
             seq.seq = self.parse_seq_data(seq.len)?;
         }
 
@@ -274,8 +274,8 @@ impl<T: Read> StreamParser<T> {
             return Ok(Some(seq));
         }
 
-        self.run_parser(&double_slash, true)?;
-        self.run_parser_many0(&line_ending_type_hack)?;
+        self.run_parser(double_slash, true)?;
+        self.run_parser_many0(line_ending_type_hack)?;
         Ok(Some(seq))
     }
 }
