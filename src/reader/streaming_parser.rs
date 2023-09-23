@@ -180,51 +180,47 @@ impl<T: Read> StreamParser<T> {
 
     /// Parses the raw sequence data, ignoring whitespace and line numbers
     fn parse_seq_data(&mut self, len: Option<usize>) -> Result<Vec<u8>, GbParserError> {
-        let mut s = if let Some(len) = len {
-            Vec::with_capacity(cmp::min(len, REASONABLE_SEQ_LEN))
-        } else {
-            Vec::new()
-        };
-        loop {
-            let mut bytes_read = 0;
-            let mut end_of_sequence = false;
-            for &b in self.buffer.data() {
-                match b {
-                    b if b.is_alpha() => {
-                        s.push(b);
+        let mut res = len.map_or_else(
+            Vec::new,
+            |len| Vec::with_capacity(cmp::min(len, REASONABLE_SEQ_LEN))
+        );
+        'outer: loop {
+            let data = self.buffer.data();
+            let mut chunk_start = None;
+            for pos in 0..data.len() {
+                let b = data[pos];
+                if b.is_alpha() {
+                    if chunk_start.is_none() {
+                        chunk_start = Some(pos);
                     }
-                    b'/' => {
-                        end_of_sequence = true;
-                        break;
+                } else {
+                    if let Some(start) = chunk_start {
+                        res.extend_from_slice(&data[start..pos]);
+                        chunk_start = None;
                     }
-                    b if b.is_dec_digit() => {}
-                    b' ' | b'\r' | b'\n' => {}
-                    x => {
-                        return Err(GbParserError::SyntaxError(format!(
-                            "Unexpected char '{}' ({}) in sequence",
-                            String::from_utf8_lossy(&[x]), // Only display printable chars
-                            x
-                        )));
-                    }
-                }
-                bytes_read += 1;
-            }
-            self.buffer.consume(bytes_read);
-            if end_of_sequence {
-                // Check that we got everything, if possible
-                if let Some(len) = len {
-                    if len != s.len() {
-                        return Err(GbParserError::SyntaxError(format!(
-                            "Got {} bytes of sequence, LOCUS promised {}",
-                            s.len(),
-                            len
-                        )));
+                    match b {
+                        b'/' => {
+                            self.buffer.consume(pos);
+                            break 'outer;
+                        }
+                        b if b.is_dec_digit() => {}
+                        b' ' | b'\r' | b'\n' => {}
+                        x => {
+                            return Err(GbParserError::SyntaxError(format!(
+                                "Unexpected char '{}' ({}) in sequence",
+                                String::from_utf8_lossy(&[x]), // Only display printable chars
+                                x
+                            )));
+                        }
                     }
                 }
-                break;
             }
+            if let Some(start) = chunk_start {
+                res.extend_from_slice(&data[start..]);
+            }
+            self.buffer.consume(data.len());
             if self.fill_buffer()? == 0 {
-                if len == Some(s.len()) {
+                if len == Some(res.len()) {
                     warn!("Unexpected EOF while parsing sequence data. Length is correct, continuing.");
                     break;
                 } else {
@@ -233,7 +229,16 @@ impl<T: Read> StreamParser<T> {
                 }
             }
         }
-        Ok(s)
+        if let Some(len) = len {
+            if len != res.len() {
+                return Err(GbParserError::SyntaxError(format!(
+                    "Got {} bytes of sequence, LOCUS promised {}",
+                    res.len(),
+                    len
+                )));
+            }
+        }
+        Ok(res)
     }
 
     pub fn read_one_record(&mut self) -> Result<Option<Seq>, GbParserError> {
