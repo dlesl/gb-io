@@ -1,18 +1,22 @@
-use crate::reader::nom_parsers::{
-    any_field, base_count, contig_text, double_slash, feature, features_header, fill_seq_fields,
-    line_ending_type_hack, locus, origin_tag, skip_preamble,
-};
-use nom::{self, AsChar, IResult, Offset};
+extern crate circular;
+
 use std::cmp;
 use std::io::Error as IoError;
 use std::io::Read;
 use std::io::Result as IoResult;
 
-use crate::seq::*;
+use nom::{self, AsChar, IResult, Offset};
+use nom::character::streaming::line_ending;
+use nom::combinator::value;
+use nom::error::ErrorKind;
 
 use crate::errors::GbParserError;
+use crate::reader::feature_table::{feature, features_header};
+use crate::reader::field::{base_count, contig_text, field, fill_seq_fields};
+use crate::reader::locus::locus;
+use crate::reader::misc::{double_slash, origin_tag, skip_preamble};
+use crate::seq::*;
 
-extern crate circular;
 
 #[derive(Debug)]
 pub struct StreamParser<T: Read> {
@@ -31,7 +35,7 @@ const MAX_CONTEXT_BYTES: usize = 50; // maximum length of the Vec in the StreamP
 
 enum StreamParserError {
     Io(IoError),
-    StreamParser(Option<Vec<u8>>, nom::ErrorKind),
+    StreamParser(Option<Vec<u8>>, ErrorKind),
     EOF,
 }
 
@@ -100,7 +104,6 @@ impl<T: Read> StreamParser<T> {
         parser: impl Fn(&[u8]) -> IResult<&[u8], U>,
         detailed_errors: bool,
     ) -> Result<U, StreamParserError> {
-        use nom::Context::Code;
         loop {
             let res = match parser(self.buffer.data()) {
                 Ok((i, o)) => {
@@ -111,13 +114,13 @@ impl<T: Read> StreamParser<T> {
                     // get more data
                     None
                 }
-                Err(nom::Err::Error(Code(i, e))) | Err(nom::Err::Failure(Code(i, e))) => {
+                Err(nom::Err::Error(e) | nom::Err::Failure(e)) => {
                     let e_slice = if detailed_errors {
-                        Some(i[..cmp::min(i.len(), MAX_CONTEXT_BYTES)].to_owned())
+                        Some(e.input[..cmp::min(e.input.len(), MAX_CONTEXT_BYTES)].to_owned())
                     } else {
                         None
                     };
-                    return Err(StreamParserError::StreamParser(e_slice, e));
+                    return Err(StreamParserError::StreamParser(e_slice, /* FIXME e.code */ ErrorKind::MapRes));
                 }
             };
 
@@ -238,8 +241,8 @@ impl<T: Read> StreamParser<T> {
 
     pub fn read_one_record(&mut self) -> Result<Option<Seq>, GbParserError> {
         // skip preamble such as the header of Genbank .SEQ files
-        self.try_run_parser(&skip_preamble, false)?;
-        let locus = match self.run_parser(&locus, true) {
+        self.try_run_parser(skip_preamble, false)?;
+        let locus = match self.run_parser(locus, true) {
             Ok(locus) => locus,
             Err(StreamParserError::EOF) => {
                 return Ok(None);
@@ -257,14 +260,14 @@ impl<T: Read> StreamParser<T> {
             division: locus.division,
             ..Seq::empty()
         };
-        let fields = self.run_parser_many0(&any_field)?;
+        let fields = self.run_parser_many0(field)?;
         let mut seq = fill_seq_fields(seq, fields).map_err(GbParserError::SyntaxError)?; //TODO: Proper error handling
-        if self.try_run_parser(&features_header, true)?.is_some() {
-            seq.features = self.run_parser_many0(&feature)?;
+        if self.try_run_parser(features_header, true)?.is_some() {
+            seq.features = self.run_parser_many0(feature)?;
         }
-        self.try_run_parser(&base_count, true)?;
-        seq.contig = self.try_run_parser(&contig_text, true)?;
-        if self.try_run_parser(&origin_tag, true)?.is_some() {
+        self.try_run_parser(base_count, true)?;
+        seq.contig = self.try_run_parser(contig_text, true)?;
+        if self.try_run_parser(origin_tag, true)?.is_some() {
             seq.seq = self.parse_seq_data(seq.len)?;
         }
 
@@ -274,8 +277,8 @@ impl<T: Read> StreamParser<T> {
             return Ok(Some(seq));
         }
 
-        self.run_parser(&double_slash, true)?;
-        self.run_parser_many0(&line_ending_type_hack)?;
+        self.run_parser(double_slash, true)?;
+        self.run_parser_many0(|i | value((), line_ending)(i))?;
         Ok(Some(seq))
     }
 }

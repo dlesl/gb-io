@@ -176,7 +176,7 @@ impl<W: Write> SeqWriter<W> {
                     first_indent.as_str(),
                     QUALIFIER_INDENT,
                 )?;
-                for &(ref key, ref val) in &f.qualifiers {
+                for (key, val) in &f.qualifiers {
                     match *val {
                         None => writeln!(&mut self.stream, "{}/{}", QUALIFIER_INDENT, key)?,
                         Some(ref val) => {

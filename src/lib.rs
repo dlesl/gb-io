@@ -8,14 +8,12 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::useless_format))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::upper_case_acronyms))]
-#![recursion_limit = "128"]
 extern crate circular;
 #[macro_use]
 extern crate err_derive;
 extern crate itertools;
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate nom;
 #[cfg(feature = "serde")]
 #[macro_use]
@@ -45,7 +43,6 @@ pub mod tests {
     pub fn init() {
         let _ = env_logger::Builder::from_default_env().try_init();
     }
-
 
     #[test]
     fn streaming() {
@@ -133,5 +130,9 @@ pub mod tests {
                 }
             }
         }
+    }
+
+    fn parse_slice(bytes: &[u8]) -> Result<Vec<Seq>, GbParserError> {
+        SeqReader::new(bytes).collect()
     }
 }

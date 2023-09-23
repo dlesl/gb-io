@@ -340,13 +340,13 @@ pub struct Feature {
 }
 
 impl Feature {
-    /// Returns all the values for a given QualifierKey. Qualifiers with no
+    /// Returns all the values for a given qualifier key. Qualifiers with no
     /// value (ie. `/foo`) are ignored
     pub fn qualifier_values(&self, key: QualifierKey) -> impl Iterator<Item = &str> {
         self.qualifiers
             .iter()
             .filter(move |&(k, _)| k == &key)
-            .filter_map(|&(_, ref v)| v.as_ref().map(String::as_str))
+            .filter_map(|(_, v)| v.as_ref().map(String::as_str))
     }
 }
 
@@ -1073,7 +1073,7 @@ mod test {
     fn test_extract_circular() {
         let whole_seq = Feature {
             location: Location::simple_range(0, 10),
-            kind: FeatureKind::from(""),
+            kind: "".into(),
             qualifiers: Vec::new(),
         };
         let make_pos = |from: i64, to: i64| -> Location {
@@ -1096,7 +1096,7 @@ mod test {
                         whole_seq.clone(),
                         Feature {
                             location: make_pos(i, i + j),
-                            kind: FeatureKind::from(""),
+                            kind: "".into(),
                             qualifiers: Vec::new(),
                         },
                     ],
@@ -1130,7 +1130,7 @@ mod test {
             seq: (0..10).collect(),
             features: vec![Feature {
                 location: Location::simple_range(0, 4),
-                kind: feature_kind!(""),
+                kind: "".into(),
                 qualifiers: vec![],
             }],
             ..Seq::empty()
@@ -1186,7 +1186,7 @@ mod test {
                 Location::simple_range(0, 2),
                 Location::simple_range(4, 9),
             ]),
-            kind: FeatureKind::from(""),
+            kind: "".into(),
             qualifiers: Vec::new(),
         }];
         let s = Seq {
@@ -1209,7 +1209,7 @@ mod test {
                 Location::simple_range(5, 9),
                 Location::simple_range(0, 4),
             ]),
-            kind: FeatureKind::from(""),
+            kind: "".into(),
             qualifiers: Vec::new(),
         }];
         let s = Seq {
@@ -1229,12 +1229,12 @@ mod test {
             features: vec![
                 Feature {
                     location: Location::simple_range(2, 7),
-                    kind: feature_kind!(""),
+                    kind: "".into(),
                     qualifiers: Vec::new(),
                 },
                 Feature {
                     location: Location::simple_range(0, 10),
-                    kind: feature_kind!(""),
+                    kind: "".into(),
                     qualifiers: Vec::new(),
                 },
                 Feature {
@@ -1242,12 +1242,12 @@ mod test {
                         Location::simple_range(7, 10),
                         Location::simple_range(0, 4),
                     ]),
-                    kind: feature_kind!(""),
+                    kind: "".into(),
                     qualifiers: Vec::new(),
                 },
                 Feature {
                     location: Location::single(0),
-                    kind: feature_kind!(""),
+                    kind: "".into(),
                     qualifiers: Vec::new(),
                 },
             ],
@@ -1404,7 +1404,7 @@ mod test {
                 .into_iter()
                 .map(|p| Feature {
                     location: p,
-                    kind: feature_kind!(""),
+                    kind: "".into(),
                     qualifiers: Vec::new(),
                 })
                 .collect(),

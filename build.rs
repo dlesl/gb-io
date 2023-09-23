@@ -80,7 +80,7 @@ fn main() {
         "tRNA",
         "V_segment",
     ];
-    let file = File::create(&Path::new(&env::var("OUT_DIR").unwrap()).join("atoms.rs")).unwrap();
+    let file = File::create(Path::new(&env::var("OUT_DIR").unwrap()).join("atoms.rs")).unwrap();
     string_cache_codegen::AtomType::new("QualifierKey", "qualifier_key!")
         .atoms(qualifiers.iter())
         .write_to(&file)
