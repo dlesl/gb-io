@@ -130,24 +130,21 @@ pub enum Location {
 }
 
 #[derive(Debug, Error)]
-#[error(display = "Not configured to fetch external sequences")]
+#[error("Not configured to fetch external sequences")]
 pub struct NoFetcherError;
 
 #[derive(Debug, Error)]
 pub enum LocationError {
-    #[error(display = "Can't determine location due to ambiguity: {}", _0)]
+    #[error("Can't determine location due to ambiguity: {0}")]
     Ambiguous(Location),
-    #[error(display = "Can't resolve external location `{}`: {}", _0, _1)]
-    External(Location, Box<dyn Error>),
-    #[error(display = "Recursion limit reached while processing: {}", _0)]
+    #[error("Can't resolve external location `{0}`: {1}")]
+    External(Location, #[source] Box<dyn Error>),
+    #[error("Recursion limit reached while processing: {0}")]
     Recursion(Location),
     // TODO: actually implement this
-    #[error(display = "Empty location list encountered")]
+    #[error("Empty location list encountered")]
     Empty,
-    #[error(
-        display = "Location refers to a location outside of the sequence: {}",
-        _0
-    )]
+    #[error("Location refers to a location outside of the sequence: {0}")]
     OutOfBounds(Location),
 }
 

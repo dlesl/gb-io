@@ -9,8 +9,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::upper_case_acronyms))]
 extern crate circular;
-#[macro_use]
-extern crate err_derive;
 extern crate itertools;
 #[macro_use]
 extern crate log;
@@ -19,6 +17,8 @@ extern crate nom;
 #[macro_use]
 extern crate serde;
 extern crate string_cache;
+#[macro_use]
+extern crate thiserror;
 
 mod errors;
 
