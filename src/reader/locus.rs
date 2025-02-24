@@ -23,8 +23,8 @@ pub struct Locus {
 
 fn topology(input: &[u8]) -> IResult<&[u8], Topology> {
     alt((
-        map(tag("linear"), |_| Topology::Linear),
-        map(tag("circular"), |_| Topology::Circular),
+        value(Topology::Linear, tag("linear")),
+        value(Topology::Circular, tag("circular")),
     )).parse(input)
 }
 

@@ -106,17 +106,17 @@ fn qualifier_value_quoted_escape<'a>(
     indent: usize,
 ) -> impl Parser<&'a [u8], Output = u8, Error = nom::error::Error<&'a [u8]>> {
     alt((
-        map(tag("\"\""), |_| b'"'),
+        value(b'"', tag("\"\"")),
         // "" split over a line boundary (does this even happen?)
-        map(
+        value(
+            b'"',
             delimited(
                 tag("\""),
                 pair(line_ending, space_indent(indent)),
                 tag("\""),
             ),
-            |_| b'"',
         ),
-        map(pair(line_ending, space_indent(indent)), |_| b'\n'),
+        value(b'\n', pair(line_ending, space_indent(indent))),
     ))
 }
 
