@@ -8,6 +8,8 @@ use combinator::{map, map_opt, map_res, opt};
 use multi::separated_list1;
 use nom::combinator::value;
 use nom::{IResult, Parser};
+use nom::OutputM;
+use nom::Check;
 use nom::{branch, bytes, character, combinator, multi, sequence};
 use sequence::{delimited, preceded, separated_pair, tuple};
 
@@ -41,47 +43,70 @@ fn location_span(input: &[u8]) -> IResult<&[u8], Location> {
     }).parse(input)
 }
 
-// fn operator<'a, F, O>(name: &'static str, inner: F) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], O>
-// where
-//     F: FnMut(&'a [u8]) -> IResult<&'a [u8], O>,
-// {
-//     preceded(tag(name), delimited(char('('), inner, char(')')))
-// }
+fn operator<'a, F, O>(name: &'static str, inner: F) -> impl Parser<&'a [u8], Output = O, Error = nom::error::Error<&'a [u8]>> 
+where
+    F: Parser<&'a [u8], Output = O, Error = nom::error::Error<&'a [u8]>>
+{
+    struct Operator<F> {
+        name: &'static str,
+        inner: F,
+    }
+
+    impl<'a, F> Parser<&'a [u8]> for Operator<F>
+    where
+        F: Parser<&'a [u8]>,
+    {
+        type Output = <F as Parser<&'a [u8]>>::Output;
+        type Error = <F as Parser<&'a [u8]>>::Error;
+        fn process<OM: nom::OutputMode>(
+            &mut self,
+            input: &'a [u8],
+        ) -> nom::PResult<OM, &'a [u8], Self::Output, Self::Error> {
+            let (i, _) = tag(self.name).process::< OutputM<Check, OM::Error, OM::Incomplete> >(input)?;
+            let (i, _) = char('(').process::< OutputM<Check, OM::Error, OM::Incomplete> >(i)?;
+            let (i, item) = self.inner.process::<OM>(i)?;
+            let (i, _) = char(')').process::< OutputM<Check, OM::Error, OM::Incomplete> >(i)?;
+            Ok((i, item))
+        }
+    }
+
+    Operator {
+        name,
+        inner
+    }
+}
 
 fn location_compound(input: &[u8]) -> IResult<&[u8], Location> {
-    todo!("location_compound")
-    // fn parser<'a>(
-    //     name: &'static str,
-    //     constructor: impl Fn(Vec<Location>) -> Location,
-    // ) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Location> {
-    //     map(
-    //         operator(name, separated_list1(char(','), location)),
-    //         constructor,
-    //     )
-    // }
-    // alt((
-    //     parser("join", Location::Join),
-    //     parser("order", Location::Order),
-    //     parser("bond", Location::Bond),
-    //     parser("one-of", Location::OneOf),
-    // )).parse(input)
+    fn parser<'a>(
+        name: &'static str,
+        constructor: impl Fn(Vec<Location>) -> Location,
+    ) -> impl Parser<&'a [u8], Output = Location, Error = nom::error::Error<&'a [u8]>> {
+        map(
+            operator(name, separated_list1(char(','), location)),
+            constructor,
+        )
+    }
+    alt((
+        parser("join", Location::Join),
+        parser("order", Location::Order),
+        parser("bond", Location::Bond),
+        parser("one-of", Location::OneOf),
+    )).parse(input)
 }
 
 fn location_complement(input: &[u8]) -> IResult<&[u8], Location> {
-    todo!("location_complement")
-    // map(operator("complement", location), |l| {
-    //     Location::Complement(Box::new(l))
-    // }).parse(input)
+    map(operator("complement", location), |l| {
+        Location::Complement(Box::new(l))
+    }).parse(input)
 }
 
 fn location_gap(input: &[u8]) -> IResult<&[u8], Location> {
-    todo!("location_gap")
-    // let gap_length = alt((
-    //     map(i64, GapLength::Known),
-    //     value(GapLength::Unk100, tag("unk100")),
-    //     value(GapLength::Unknown, tag("")),
-    // ));
-    // map(operator("gap", gap_length), Location::Gap).parse(input)
+    let gap_length = alt((
+        map(i64, GapLength::Known),
+        value(GapLength::Unk100, tag("unk100")),
+        value(GapLength::Unknown, tag("")),
+    ));
+    map(operator("gap", gap_length), Location::Gap).parse(input)
 }
 
 fn location_external(input: &[u8]) -> IResult<&[u8], Location> {
