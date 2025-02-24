@@ -5,7 +5,7 @@ use std::io::Error as IoError;
 use std::io::Read;
 use std::io::Result as IoResult;
 
-use nom::{self, AsChar, IResult, Offset};
+use nom::{self, AsChar, IResult, Offset, Parser};
 use nom::character::streaming::line_ending;
 use nom::combinator::value;
 use nom::error::ErrorKind;
@@ -278,7 +278,7 @@ impl<T: Read> StreamParser<T> {
         }
 
         self.run_parser(double_slash, true)?;
-        self.run_parser_many0(|i | value((), line_ending)(i))?;
+        self.run_parser_many0(|i | value((), line_ending).parse(i))?;
         Ok(Some(seq))
     }
 }

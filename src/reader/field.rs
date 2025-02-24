@@ -10,7 +10,7 @@ use nom::error::ErrorKind;
 use nom::multi::many0;
 use nom::sequence::{delimited, terminated};
 use nom::Err::{Error, Incomplete};
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::reader::errors::NomParserError;
 use crate::reader::location::location;
@@ -18,7 +18,7 @@ use crate::reader::misc;
 use crate::seq::{Location, Reference, Seq, Source};
 
 pub fn fields(i: &[u8]) -> IResult<&[u8], Vec<Field>> {
-    many0(field)(i)
+    many0(field).parse(i)
 }
 
 /// Matches `indent` spaces
@@ -47,7 +47,7 @@ pub fn field_string<'a>(
     indent: usize,
     name: &'static str,
     keep_ws: bool,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], String> {
+) -> impl Parser<&'a [u8], Output = String, Error = nom::error::Error<&'a [u8]>> {
     map_res(field_bytes(indent, name, keep_ws), String::from_utf8)
 }
 
@@ -70,13 +70,13 @@ fn field_bytes(
     move |i| {
         let (i, _) = space_indent(indent)(i)?;
         let (i, _) = tag(name)(i)?;
-        let (i, spaces) = map(is_a(" "), <[_]>::len)(i)?;
-        let (i, first_line) = terminated(not_line_ending, line_ending)(i)?;
+        let (i, spaces) = map(is_a(" "), <[_]>::len).parse(i)?;
+        let (i, first_line) = terminated(not_line_ending, line_ending).parse(i)?;
         let (i, more_lines) = many0(delimited(
             space_indent(indent + spaces + name.len()),
             not_line_ending,
             line_ending,
-        ))(i)?;
+        )).parse(i)?;
         Ok((
             i,
             concat_lines(once(first_line).chain(more_lines), keep_ws),
@@ -87,19 +87,19 @@ fn field_bytes(
 // I think this is deprecated but sometimes it comes after features,
 // let's just ignore it.
 pub fn base_count(i: &[u8]) -> IResult<&[u8], ()> {
-    value((), field_string(0, "BASE COUNT", false))(i)
+    value((), field_string(0, "BASE COUNT", false)).parse(i)
 }
 
 // REFERENCE
 
 fn reference(i: &[u8]) -> IResult<&[u8], Reference> {
-    let (i, description) = field_string(0, "REFERENCE", true)(i)?;
-    let (i, authors) = opt(field_string(2, "AUTHORS", true))(i)?;
-    let (i, consortium) = opt(field_string(2, "CONSRTM", true))(i)?;
-    let (i, title) = field_string(2, "TITLE", true)(i)?;
-    let (i, journal) = opt(field_string(2, "JOURNAL", true))(i)?;
-    let (i, pubmed) = opt(field_string(3, "PUBMED", false))(i)?;
-    let (i, remark) = opt(field_string(2, "REMARK", true))(i)?;
+    let (i, description) = field_string(0, "REFERENCE", true).parse(i)?;
+    let (i, authors) = opt(field_string(2, "AUTHORS", true)).parse(i)?;
+    let (i, consortium) = opt(field_string(2, "CONSRTM", true)).parse(i)?;
+    let (i, title) = field_string(2, "TITLE", true).parse(i)?;
+    let (i, journal) = opt(field_string(2, "JOURNAL", true)).parse(i)?;
+    let (i, pubmed) = opt(field_string(3, "PUBMED", false)).parse(i)?;
+    let (i, remark) = opt(field_string(2, "REMARK", true)).parse(i)?;
     Ok((
         i,
         Reference {
@@ -135,8 +135,8 @@ macro_rules! parse_field {
 }
 
 fn source(i: &[u8]) -> IResult<&[u8], Field> {
-    let (i, source) = field_string(0, "SOURCE", true)(i)?;
-    let (i, organism) = opt(field_string(2, "ORGANISM", true))(i)?;
+    let (i, source) = field_string(0, "SOURCE", true).parse(i)?;
+    let (i, organism) = opt(field_string(2, "ORGANISM", true)).parse(i)?;
     Ok((i, Field::SOURCE(Source { source, organism })))
 }
 
@@ -154,7 +154,7 @@ pub fn field(i: &[u8]) -> IResult<&[u8], Field> {
         map(misc::ignored_line, |line| {
             Field::UnrecognisedLine(line.into())
         }),
-    ))(i)
+    )).parse(i)
 }
 
 /// Create a new Seq with metadata from a Vec<Field>
@@ -209,7 +209,7 @@ pub fn contig_text(i: &[u8]) -> IResult<&[u8], Location> {
             Ok((_, l)) => Ok(l),
             Err(_) => Err(NomParserError::Location),
         }
-    })(i) // TODO: proper error reporting
+    }).parse(i) // TODO: proper error reporting
 }
 
 #[cfg(test)]

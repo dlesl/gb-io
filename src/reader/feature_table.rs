@@ -9,7 +9,7 @@ use nom::error::ErrorKind::{MapRes, Tag};
 use nom::multi::many0;
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use nom::Err::{Error, Incomplete};
-use nom::{IResult, Needed};
+use nom::{IResult, Needed, Parser};
 
 use crate::reader::errors::NomParserError;
 use crate::reader::location::location;
@@ -19,13 +19,13 @@ use crate::{FeatureKind, QualifierKey};
 pub fn features_header(input: &[u8]) -> IResult<&[u8], ()> {
     value(
         (),
-        tuple((
+        (
             tag("FEATURES"),
             space1,
             tag("Location/Qualifiers"),
             line_ending,
-        )),
-    )(input)
+        ),
+    ).parse(input)
 }
 
 /// Used by `qualifier_value_bare` and `contig`
@@ -50,7 +50,7 @@ fn qualifier_value_bare_bytes(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u
             let (j, _) = line_ending(i)?;
             i = j;
             // check if the next line isn't indented or starts with '/', stop if so
-            match preceded(space_indent(indent), peek(none_of("/")))(i) {
+            match preceded(space_indent(indent), peek(none_of("/"))).parse(i) {
                 Ok((j, _)) => {
                     i = j;
                 }
@@ -84,7 +84,7 @@ fn space_indent(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], ()> {
     }
 }
 
-fn location_text<'a>(indent: usize) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Location> {
+fn location_text<'a>(indent: usize) -> impl Parser<&'a [u8], Output = Location, Error = nom::error::Error<&'a [u8]>> {
     map_res(qualifier_value_bare_bytes(indent), |r| match location(&r) {
         Ok((_, p)) => Ok(p),
         Err(_) => Err(NomParserError::Location),
@@ -96,7 +96,7 @@ fn location_text<'a>(indent: usize) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8],
 // see: http://www.insdc.org/documents/feature_table.html
 fn qualifier_value_bare(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], String> {
     move |i| {
-        let (i, mut s) = map_res(qualifier_value_bare_bytes(indent), String::from_utf8)(i)?;
+        let (i, mut s) = map_res(qualifier_value_bare_bytes(indent), String::from_utf8).parse(i)?;
         s.shrink_to_fit();
         Ok((i, s))
     }
@@ -104,7 +104,7 @@ fn qualifier_value_bare(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], St
 
 fn qualifier_value_quoted_escape<'a>(
     indent: usize,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], u8> {
+) -> impl Parser<&'a [u8], Output = u8, Error = nom::error::Error<&'a [u8]>> {
     alt((
         map(tag("\"\""), |_| b'"'),
         // "" split over a line boundary (does this even happen?)
@@ -164,7 +164,7 @@ fn qualifier_value_quoted<'a, 'b>(
             }
             i = &i[consumed..];
             // try to match an escape sequence
-            match qualifier_value_quoted_escape(indent)(i) {
+            match qualifier_value_quoted_escape(indent).parse(i) {
                 Ok((j, b)) => {
                     // Hacky way to avoid adding linebreaks where they don't belong
                     if b == b'\n' {
@@ -183,7 +183,7 @@ fn qualifier_value_quoted<'a, 'b>(
         }
 
         // try to match end of qualifier
-        let (j, _) = pair(tag("\""), line_ending)(i)?;
+        let (j, _) = pair(tag("\""), line_ending).parse(i)?;
         let mut s =
             String::from_utf8(res).map_err(|_| Error(nom::error::Error::new(input, MapRes)))?;
         s.shrink_to_fit(); // save some memory
@@ -217,7 +217,7 @@ fn qualifier_key(input: &[u8]) -> IResult<&[u8], QualifierKey> {
         match_qk!("transl_table"),
         match_qk!("function"),
         map(map_res(is_not("=\r\n"), str::from_utf8), QualifierKey::from),
-    ))(input)
+    )).parse(input)
 }
 
 fn qualifier(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], (QualifierKey, Option<String>)> {
@@ -237,7 +237,7 @@ fn qualifier(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], (QualifierKey
                 ),
             ),
             value(None, line_ending),
-        ))(i)?;
+        )).parse(i)?;
         Ok((i, (key, val)))
     }
 }
@@ -258,17 +258,16 @@ fn feature_kind(input: &[u8]) -> IResult<&[u8], FeatureKind> {
         match_fk!("misc_RNA"),
         match_fk!("ncRNA"),
         map(map_res(is_not(" "), str::from_utf8), FeatureKind::from),
-    ))
-        (input)
+    )).parse(input)
 }
 
 pub fn feature(i: &[u8]) -> IResult<&[u8], Feature> {
-    let (i, spaces_before) = map(is_a(" "), <[_]>::len)(i)?;
+    let (i, spaces_before) = map(is_a(" "), <[_]>::len).parse(i)?;
     let (i, kind) = feature_kind(i)?;
-    let (i, spaces_after) = map(is_a(" "), <[_]>::len)(i)?;
+    let (i, spaces_after) = map(is_a(" "), <[_]>::len).parse(i)?;
     let indent = spaces_before + kind.len() + spaces_after;
-    let (i, location) = location_text(indent)(i)?;
-    let (i, qualifiers) = many0(qualifier(indent))(i)?;
+    let (i, location) = location_text(indent).parse(i)?;
+    let (i, qualifiers) = many0(qualifier(indent)).parse(i)?;
     Ok((
         i,
         Feature {
@@ -280,7 +279,7 @@ pub fn feature(i: &[u8]) -> IResult<&[u8], Feature> {
 }
 
 pub fn features(input: &[u8]) -> IResult<&[u8], Vec<Feature>> {
-    preceded(features_header, many0(feature))(input)
+    preceded(features_header, many0(feature)).parse(input)
 }
 
 #[cfg(test)]

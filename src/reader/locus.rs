@@ -7,7 +7,7 @@ use nom::character::streaming::{
 };
 use nom::combinator::{map, map_res, opt, value};
 use nom::sequence::{delimited, preceded, tuple};
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::seq::{Date, Topology};
 
@@ -25,7 +25,7 @@ fn topology(input: &[u8]) -> IResult<&[u8], Topology> {
     alt((
         map(tag("linear"), |_| Topology::Linear),
         map(tag("circular"), |_| Topology::Circular),
-    ))(input)
+    )).parse(input)
 }
 
 fn date(input: &[u8]) -> IResult<&[u8], Date> {
@@ -47,15 +47,15 @@ fn date(input: &[u8]) -> IResult<&[u8], Date> {
     map_res(
         tuple((u32, tag("-"), month_parser, tag("-"), i32)),
         |(day, _, month, _, year)| Date::from_ymd(year, month, day),
-    )(input)
+    ).parse(input)
 }
 
 fn name(input: &[u8]) -> IResult<&[u8], &str> {
-    map_res(is_not(": \t\r\n"), str::from_utf8)(input)
+    map_res(is_not(": \t\r\n"), str::from_utf8).parse(input)
 }
 
 fn molecule_type(input: &[u8]) -> IResult<&[u8], &str> {
-    map_res(is_not(" "), str::from_utf8)(input)
+    map_res(is_not(" "), str::from_utf8).parse(input)
 }
 
 fn locus_full(input: &[u8]) -> IResult<&[u8], Locus> {
@@ -77,7 +77,7 @@ fn locus_full(input: &[u8]) -> IResult<&[u8], Locus> {
             molecule_type: Some(molecule_type.into()),
             division: division.unwrap_or("UNK").into(),
         },
-    )(input)
+    ).parse(input)
 }
 
 // EMBL style LOCUS, no topology info
@@ -99,7 +99,7 @@ fn locus_traditional(input: &[u8]) -> IResult<&[u8], Locus> {
             molecule_type: Some(molecule_type.into()),
             division: division.into(),
         },
-    )(input)
+    ).parse(input)
 }
 
 // Just give up :)
@@ -117,7 +117,7 @@ fn locus_tag_only(input: &[u8]) -> IResult<&[u8], Locus> {
                 division: "UNK".into(),
             }
         },
-    )(input)
+    ).parse(input)
 }
 
 pub fn locus(input: &[u8]) -> IResult<&[u8], Locus> {
@@ -125,7 +125,7 @@ pub fn locus(input: &[u8]) -> IResult<&[u8], Locus> {
         tuple((tag("LOCUS"), space1)),
         alt((locus_full, locus_traditional, locus_tag_only)),
         tuple((space0, line_ending)),
-    )(input)
+    ).parse(input)
 }
 
 #[cfg(test)]

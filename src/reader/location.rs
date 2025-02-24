@@ -7,7 +7,7 @@ use character::complete::{char, i64};
 use combinator::{map, map_opt, map_res, opt};
 use multi::separated_list1;
 use nom::combinator::value;
-use nom::IResult;
+use nom::{IResult, Parser};
 use nom::{branch, bytes, character, combinator, multi, sequence};
 use sequence::{delimited, preceded, separated_pair, tuple};
 
@@ -16,7 +16,7 @@ use crate::seq::{After, Before, GapLength, Location};
 fn location_single(input: &[u8]) -> IResult<&[u8], Location> {
     map(i64, |i| {
         Location::Range(((i - 1), Before(false)), (i, After(false)))
-    })(input)
+    }).parse(input)
 }
 
 fn location_between(input: &[u8]) -> IResult<&[u8], Location> {
@@ -28,7 +28,7 @@ fn location_between(input: &[u8]) -> IResult<&[u8], Location> {
         |(a, b)| {
             ((a - b).abs() == 1 || ((a == 1) ^ (b == 1))).then_some(Location::Between(a - 1, b - 1))
         },
-    )(input)
+    ).parse(input)
 }
 
 fn location_span(input: &[u8]) -> IResult<&[u8], Location> {
@@ -38,47 +38,50 @@ fn location_span(input: &[u8]) -> IResult<&[u8], Location> {
             (a - 1, Before(before.is_some())),
             (b, After(after.is_some())),
         )
-    })(input)
+    }).parse(input)
 }
 
-fn operator<'a, F, O>(name: &'static str, inner: F) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], O>
-where
-    F: FnMut(&'a [u8]) -> IResult<&'a [u8], O>,
-{
-    preceded(tag(name), delimited(char('('), inner, char(')')))
-}
+// fn operator<'a, F, O>(name: &'static str, inner: F) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], O>
+// where
+//     F: FnMut(&'a [u8]) -> IResult<&'a [u8], O>,
+// {
+//     preceded(tag(name), delimited(char('('), inner, char(')')))
+// }
 
 fn location_compound(input: &[u8]) -> IResult<&[u8], Location> {
-    fn parser<'a>(
-        name: &'static str,
-        constructor: impl Fn(Vec<Location>) -> Location,
-    ) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Location> {
-        map(
-            operator(name, separated_list1(char(','), location)),
-            constructor,
-        )
-    }
-    alt((
-        parser("join", Location::Join),
-        parser("order", Location::Order),
-        parser("bond", Location::Bond),
-        parser("one-of", Location::OneOf),
-    ))(input)
+    todo!("location_compound")
+    // fn parser<'a>(
+    //     name: &'static str,
+    //     constructor: impl Fn(Vec<Location>) -> Location,
+    // ) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Location> {
+    //     map(
+    //         operator(name, separated_list1(char(','), location)),
+    //         constructor,
+    //     )
+    // }
+    // alt((
+    //     parser("join", Location::Join),
+    //     parser("order", Location::Order),
+    //     parser("bond", Location::Bond),
+    //     parser("one-of", Location::OneOf),
+    // )).parse(input)
 }
 
 fn location_complement(input: &[u8]) -> IResult<&[u8], Location> {
-    map(operator("complement", location), |l| {
-        Location::Complement(Box::new(l))
-    })(input)
+    todo!("location_complement")
+    // map(operator("complement", location), |l| {
+    //     Location::Complement(Box::new(l))
+    // }).parse(input)
 }
 
 fn location_gap(input: &[u8]) -> IResult<&[u8], Location> {
-    let gap_length = alt((
-        map(i64, GapLength::Known),
-        value(GapLength::Unk100, tag("unk100")),
-        value(GapLength::Unknown, tag("")),
-    ));
-    map(operator("gap", gap_length), Location::Gap)(input)
+    todo!("location_gap")
+    // let gap_length = alt((
+    //     map(i64, GapLength::Known),
+    //     value(GapLength::Unk100, tag("unk100")),
+    //     value(GapLength::Unknown, tag("")),
+    // ));
+    // map(operator("gap", gap_length), Location::Gap).parse(input)
 }
 
 fn location_external(input: &[u8]) -> IResult<&[u8], Location> {
@@ -97,7 +100,7 @@ fn location_external(input: &[u8]) -> IResult<&[u8], Location> {
     ));
     map(tuple((accession_parser, location)), |(accession, loc)| {
         Location::External(accession.to_owned(), loc.map(Box::new))
-    })(input)
+    }).parse(input)
 }
 
 pub fn location(input: &[u8]) -> IResult<&[u8], Location> {
@@ -109,7 +112,7 @@ pub fn location(input: &[u8]) -> IResult<&[u8], Location> {
         location_single,
         location_gap,
         location_external,
-    ))(input)
+    )).parse(input)
 }
 
 #[cfg(test)]
