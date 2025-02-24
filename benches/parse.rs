@@ -9,10 +9,12 @@ const ECOLI: &[u8] = include_bytes!("../tests/mg1655.gb");
 
 fn ecoli_slice(b: &mut Bencher) {
     b.iter(|| parse_slice(ECOLI).unwrap());
+    b.bytes = ECOLI.len() as u64;
 }
 
 fn ecoli_streaming(b: &mut Bencher) {
     b.iter(|| SeqReader::new(ECOLI).next().unwrap().unwrap());
+    b.bytes = ECOLI.len() as u64;
 }
 
 fn ecoli_revcomp(b: &mut Bencher) {
