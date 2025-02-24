@@ -11,7 +11,7 @@ use nom::{IResult, Parser};
 use nom::OutputM;
 use nom::Check;
 use nom::{branch, bytes, character, combinator, multi, sequence};
-use sequence::{delimited, preceded, separated_pair, tuple};
+use sequence::{delimited, preceded, separated_pair};
 
 use crate::seq::{After, Before, GapLength, Location};
 
@@ -34,7 +34,7 @@ fn location_between(input: &[u8]) -> IResult<&[u8], Location> {
 }
 
 fn location_span(input: &[u8]) -> IResult<&[u8], Location> {
-    let parser = tuple((opt(char('<')), i64, tag(".."), opt(char('>')), i64));
+    let parser = (opt(char('<')), i64, tag(".."), opt(char('>')), i64);
     map(parser, |(before, a, _, after, b)| {
         Location::Range(
             (a - 1, Before(before.is_some())),
@@ -123,7 +123,7 @@ fn location_external(input: &[u8]) -> IResult<&[u8], Location> {
             location_gap,
         )),
     ));
-    map(tuple((accession_parser, location)), |(accession, loc)| {
+    map((accession_parser, location), |(accession, loc)| {
         Location::External(accession.to_owned(), loc.map(Box::new))
     }).parse(input)
 }

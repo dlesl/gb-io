@@ -7,7 +7,7 @@ use nom::character::streaming::{line_ending, one_of, space1};
 use nom::combinator::{map, map_res, peek, value};
 use nom::error::ErrorKind::{MapRes, Tag};
 use nom::multi::many0;
-use nom::sequence::{delimited, pair, preceded, terminated, tuple};
+use nom::sequence::{delimited, pair, preceded, terminated};
 use nom::Err::{Error, Incomplete};
 use nom::{IResult, Needed, Parser};
 

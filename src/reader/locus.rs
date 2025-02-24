@@ -6,7 +6,7 @@ use nom::character::streaming::{
     alpha1, i32, line_ending, not_line_ending, space0, space1, u32, u64,
 };
 use nom::combinator::{map, map_res, opt, value};
-use nom::sequence::{delimited, preceded, tuple};
+use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
 
 use crate::seq::{Date, Topology};
@@ -45,7 +45,7 @@ fn date(input: &[u8]) -> IResult<&[u8], Date> {
     ));
 
     map_res(
-        tuple((u32, tag("-"), month_parser, tag("-"), i32)),
+        (u32, tag("-"), month_parser, tag("-"), i32),
         |(day, _, month, _, year)| Date::from_ymd(year, month, day),
     ).parse(input)
 }
@@ -60,7 +60,7 @@ fn molecule_type(input: &[u8]) -> IResult<&[u8], &str> {
 
 fn locus_full(input: &[u8]) -> IResult<&[u8], Locus> {
     map(
-        tuple((
+        (
             name,
             preceded(space1, u64),
             preceded(space1, tag("bp")),
@@ -68,7 +68,7 @@ fn locus_full(input: &[u8]) -> IResult<&[u8], Locus> {
             preceded(space1, topology),
             opt(preceded(space1, map_res(alpha1, str::from_utf8))),
             opt(preceded(space1, date)),
-        )),
+        ),
         |(name, len, _, molecule_type, topology, division, date)| Locus {
             name: Some(String::from(name)),
             len: Some(len as usize),
@@ -83,14 +83,14 @@ fn locus_full(input: &[u8]) -> IResult<&[u8], Locus> {
 // EMBL style LOCUS, no topology info
 fn locus_traditional(input: &[u8]) -> IResult<&[u8], Locus> {
     map(
-        tuple((
+        (
             name,
             preceded(space1, u64),
             preceded(space1, tag("bp")),
             preceded(space1, molecule_type),
             map_res(preceded(space1, alpha1), str::from_utf8),
             opt(preceded(space1, date)),
-        )),
+        ),
         |(name, len, _, molecule_type, division, date)| Locus {
             name: Some(String::from(name)),
             len: Some(len as usize),
@@ -122,9 +122,9 @@ fn locus_tag_only(input: &[u8]) -> IResult<&[u8], Locus> {
 
 pub fn locus(input: &[u8]) -> IResult<&[u8], Locus> {
     delimited(
-        tuple((tag("LOCUS"), space1)),
+        (tag("LOCUS"), space1),
         alt((locus_full, locus_traditional, locus_tag_only)),
-        tuple((space0, line_ending)),
+        (space0, line_ending),
     ).parse(input)
 }
 

@@ -4,9 +4,8 @@ use nom::bytes::streaming::tag;
 use nom::character::streaming::{alpha1, digit1, line_ending, multispace0, multispace1, not_line_ending, space0, space1};
 use nom::combinator::{complete, map, map_res, not, opt, value};
 use nom::multi::{fold_many0, many0, many1};
-use nom::sequence::{delimited, pair, preceded, separated_pair, tuple};
+use nom::sequence::{delimited, pair, preceded, separated_pair};
 use nom::{IResult, Parser};
-use nom::error::ParseError;
 use std::{cmp, str};
 use crate::reader::feature_table::features;
 use crate::reader::locus::locus;
@@ -36,7 +35,7 @@ pub fn skip_preamble(i: &[u8]) -> IResult<&[u8], ()> {
 
 pub fn origin_tag(i: &[u8]) -> IResult<&[u8], Option<String>> {
     alt((
-        value(None, tuple((tag("ORIGIN"), space0, line_ending))),
+        value(None, (tag("ORIGIN"), space0, line_ending)),
         map(field_string(0, "ORIGIN", true), Some),
     )).parse(i)
 }

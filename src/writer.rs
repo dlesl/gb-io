@@ -149,7 +149,7 @@ impl<W: Write> SeqWriter<W> {
         }
         for r in &record.references {
             write_field(&mut self.stream, &r.description, "REFERENCE")?;
-            for a in &r.authors {
+            if let Some(a) = &r.authors {
                 write_field(&mut self.stream, a, "  AUTHORS")?;
             }
             write_field_maybe(&mut self.stream, &r.consortium, "  CONSRTM")?;
