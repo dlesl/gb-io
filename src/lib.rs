@@ -4,10 +4,10 @@
 //! annotations and respecting circular molecules.
 
 // #![warn(missing_docs)]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::useless_format))]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::upper_case_acronyms))]
+#![allow(clippy::len_without_is_empty)]
+#![allow(clippy::useless_format)]
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::upper_case_acronyms)]
 extern crate circular;
 extern crate itertools;
 #[macro_use]

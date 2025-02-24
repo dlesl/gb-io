@@ -11,7 +11,7 @@ use nom::{IResult, Parser};
 use nom::OutputM;
 use nom::Check;
 use nom::{branch, bytes, character, combinator, multi, sequence};
-use sequence::{delimited, preceded, separated_pair};
+use sequence::{preceded, separated_pair};
 
 use crate::seq::{After, Before, GapLength, Location};
 
