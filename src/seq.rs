@@ -99,7 +99,7 @@ pub struct After(pub bool);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
 pub enum Location {
-    /// Represents a range of positions, indicated with [<]x..[>]y in
+    /// Represents a range of positions, indicated with `[<]x..[>]y` in
     /// the Genbank file. If `<` or `>` are present, then `Before` or
     /// `After` will be true, respectively. This means that the
     /// feature starts before/extends beyond the end point. Genbank
@@ -453,8 +453,8 @@ impl Seq {
     /// Returns the "actual" length of the sequence. Note that this may not be
     /// equal to self.seq.len(), in the following circumstances:
     /// - `self.seq` is empty and `self.contig` is not, and the corresponding
-    /// file's LOCUS line specified a length. The returned value is i64 to
-    /// simplifiy arithmetic with coords from `Location`
+    ///   file's LOCUS line specified a length. The returned value is i64 to
+    ///   simplifiy arithmetic with coords from `Location`
     pub fn len(&self) -> i64 {
         if let Some(len) = self.len {
             assert!(self.seq.is_empty() || len == self.seq.len());
@@ -474,6 +474,7 @@ impl Seq {
     /// values will satisfy the following conditions:
     /// - `0 <= first < len`
     /// - `first < last`
+    ///
     /// This means that in the case of a range which wraps around, `last` >= `len`.
     pub fn unwrap_range(&self, start: i64, end: i64) -> (i64, i64) {
         let len = self.len();
