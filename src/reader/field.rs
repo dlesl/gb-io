@@ -4,13 +4,12 @@ use std::str;
 use itertools::intersperse;
 use nom::branch::alt;
 use nom::bytes::streaming::{is_a, tag};
-use nom::character::streaming::{line_ending, not_line_ending};
+use nom::character::streaming::{line_ending, not_line_ending, char};
 use nom::combinator::{map, map_res, opt, value};
-use nom::error::ErrorKind;
 use nom::multi::many0;
 use nom::sequence::{delimited, terminated};
-use nom::Err::{Error, Incomplete};
 use nom::{IResult, Parser};
+use nom::multi::fold;
 
 use crate::reader::errors::NomParserError;
 use crate::reader::location::location;
@@ -22,25 +21,8 @@ pub fn fields(i: &[u8]) -> IResult<&[u8], Vec<Field>> {
 }
 
 /// Matches `indent` spaces
-fn space_indent(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], ()> {
-    move |i| {
-        if indent == 0 {
-            return Ok((i, ()));
-        }
-        let mut consumed = 0;
-        for &b in i {
-            match b {
-                b' ' => {
-                    consumed += 1;
-                    if consumed == indent {
-                        return Ok((&i[consumed..], ()));
-                    }
-                }
-                _ => return Err(Error(nom::error::Error::new(i, ErrorKind::Tag))),
-            }
-        }
-        Err(Incomplete(nom::Needed::Unknown))
-    }
+pub fn space_indent<'a>(indent: usize) -> impl Parser<&'a [u8], Output = (), Error = nom::error::Error<&'a [u8]>> {   //-> impl FnMut(&[u8]) -> IResult<&[u8], ()> {
+    fold(indent, char(' '), || (), |_, _| () )
 }
 
 pub fn field_string<'a>(
@@ -68,7 +50,7 @@ fn field_bytes(
     keep_ws: bool,
 ) -> impl FnMut(&[u8]) -> IResult<&[u8], Vec<u8>> {
     move |i| {
-        let (i, _) = space_indent(indent)(i)?;
+        let (i, _) = space_indent(indent).parse(i)?;
         let (i, _) = tag(name)(i)?;
         let (i, spaces) = map(is_a(" "), <[_]>::len).parse(i)?;
         let (i, first_line) = terminated(not_line_ending, line_ending).parse(i)?;

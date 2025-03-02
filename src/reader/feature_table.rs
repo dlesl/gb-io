@@ -5,7 +5,7 @@ use nom::bytes::streaming::{is_a, is_not, tag};
 use nom::character::complete::none_of;
 use nom::character::streaming::{line_ending, one_of, space1};
 use nom::combinator::{map, map_res, peek, value};
-use nom::error::ErrorKind::{MapRes, Tag};
+use nom::error::ErrorKind::MapRes;
 use nom::multi::many0;
 use nom::sequence::{delimited, pair, preceded, terminated};
 use nom::Err::{Error, Incomplete};
@@ -15,6 +15,7 @@ use crate::reader::errors::NomParserError;
 use crate::reader::location::location;
 use crate::seq::{Feature, Location};
 use crate::{FeatureKind, QualifierKey};
+use crate::reader::field::space_indent;
 
 pub fn features_header(input: &[u8]) -> IResult<&[u8], ()> {
     value(
@@ -59,28 +60,6 @@ fn qualifier_value_bare_bytes(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u
             }
         }
         Ok((i, res))
-    }
-}
-
-/// Matches `indent` spaces
-fn space_indent(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], ()> {
-    move |i| {
-        if indent == 0 {
-            return Ok((i, ()));
-        }
-        let mut consumed = 0;
-        for &b in i {
-            match b {
-                b' ' => {
-                    consumed += 1;
-                    if consumed == indent {
-                        return Ok((&i[consumed..], ()));
-                    }
-                }
-                _ => return Err(Error(nom::error::Error::new(i, Tag))),
-            }
-        }
-        Err(Incomplete(Needed::Unknown))
     }
 }
 
@@ -222,7 +201,7 @@ fn qualifier_key(input: &[u8]) -> IResult<&[u8], QualifierKey> {
 
 fn qualifier(indent: usize) -> impl FnMut(&[u8]) -> IResult<&[u8], (QualifierKey, Option<String>)> {
     move |i| {
-        let (i, _) = space_indent(indent)(i)?;
+        let (i, _) = space_indent(indent).parse(i)?;
         let (i, _) = tag("/")(i)?;
         let (i, key) = qualifier_key(i)?;
         let (i, val) = alt((
