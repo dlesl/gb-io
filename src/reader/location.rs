@@ -8,10 +8,8 @@ use combinator::{map, map_opt, map_res, opt};
 use multi::separated_list1;
 use nom::combinator::value;
 use nom::{IResult, Parser};
-use nom::OutputM;
-use nom::Check;
-use nom::{branch, bytes, character, combinator, multi, sequence};
-use sequence::{preceded, separated_pair};
+use nom::{branch, bytes, character, combinator, multi};
+use nom::sequence::{preceded, separated_pair, terminated};
 
 use crate::seq::{After, Before, GapLength, Location};
 
@@ -47,33 +45,10 @@ fn operator<'a, F, O>(name: &'static str, inner: F) -> impl Parser<&'a [u8], Out
 where
     F: Parser<&'a [u8], Output = O, Error = nom::error::Error<&'a [u8]>>
 {
-    struct Operator<F> {
-        name: &'static str,
-        inner: F,
-    }
-
-    impl<'a, F> Parser<&'a [u8]> for Operator<F>
-    where
-        F: Parser<&'a [u8]>,
-    {
-        type Output = <F as Parser<&'a [u8]>>::Output;
-        type Error = <F as Parser<&'a [u8]>>::Error;
-        fn process<OM: nom::OutputMode>(
-            &mut self,
-            input: &'a [u8],
-        ) -> nom::PResult<OM, &'a [u8], Self::Output, Self::Error> {
-            let (i, _) = tag(self.name).process::< OutputM<Check, OM::Error, OM::Incomplete> >(input)?;
-            let (i, _) = char('(').process::< OutputM<Check, OM::Error, OM::Incomplete> >(i)?;
-            let (i, item) = self.inner.process::<OM>(i)?;
-            let (i, _) = char(')').process::< OutputM<Check, OM::Error, OM::Incomplete> >(i)?;
-            Ok((i, item))
-        }
-    }
-
-    Operator {
-        name,
-        inner
-    }
+    terminated(
+        preceded(tag(name), preceded(char('('), inner)),
+        char(')'),
+    )
 }
 
 fn location_compound(input: &[u8]) -> IResult<&[u8], Location> {
