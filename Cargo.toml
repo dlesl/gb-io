@@ -14,9 +14,9 @@ exclude = ["tests/*", ".github/*"]
 string_cache_codegen = "0.5"
 
 [dependencies]
-itertools = "0.11"
+itertools = "0.14"
 circular = "0.3.0"
-thiserror = "2.0.0"
+thiserror = "2.0.12"
 string_cache = "0.8"
 log = "0.4"
 nom = "8.0.0"
@@ -27,9 +27,9 @@ serde_bytes = { version = "0.11", optional = true }
 default = ["serde", "serde_bytes"]
 
 [dev-dependencies]
-glob = "0.3.0"
+glob = "0.3"
 bencher = "0.1.5"
-env_logger = "0.10.0"
+env_logger = "0.11"
 
 [[bench]]
 name = "parse"
