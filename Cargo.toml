@@ -24,7 +24,7 @@ serde = { version = "1", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11", optional = true }
 
 [features]
-default = ["serde", "serde_bytes"]
+serde = ["dep:serde", "dep:serde_bytes"]
 
 [dev-dependencies]
 glob = "0.3"
