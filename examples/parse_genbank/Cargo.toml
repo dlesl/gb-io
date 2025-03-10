@@ -1,10 +1,12 @@
 [package]
 name = "parse_genbank"
 version = "0.1.0"
+edition = "2024"
 
 [dependencies]
-reqwest = "0.9.0"
+reqwest = { version = "0.12", features = ["blocking"]}
 flate2 = "1.0"
+itertools = "0.14"
 
 [dependencies.gb-io]
 path = "../.."

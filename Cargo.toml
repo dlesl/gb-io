@@ -7,17 +7,12 @@ authors = ["David Leslie"]
 homepage = "https://github.com/dlesl/gb-io"
 repository = "https://github.com/dlesl/gb-io"
 description = "A library for parsing, writing and manipulating Genbank sequence files"
-build = "build.rs"
 exclude = ["tests/*", ".github/*"]
-
-[build-dependencies]
-string_cache_codegen = "0.5"
 
 [dependencies]
 itertools = "0.14"
 circular = "0.3.0"
 thiserror = "2.0.12"
-string_cache = "0.8"
 log = "0.4"
 nom = "8.0.0"
 serde = { version = "1", optional = true, features = ["derive"] }

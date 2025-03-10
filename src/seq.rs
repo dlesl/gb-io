@@ -9,7 +9,6 @@ use std::str;
 use crate::errors::GbParserError;
 use crate::reader::parse_location;
 use crate::dna::revcomp;
-pub use crate::{FeatureKind, QualifierKey};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
@@ -325,24 +324,27 @@ impl fmt::Display for Location {
     }
 }
 
+/// A qualifier such as `/gene="lacZ"`
+pub type Qualifier = (Cow<'static, str>, Option<String>);
+
 /// An annotation, or "feature". Note that one qualifier key can occur multiple
 /// times with distinct values. We store them in a `Vec` to preserve order. Some
 /// qualifiers have no value.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Feature {
-    pub kind: FeatureKind,
+    pub kind: Cow<'static, str>,
     pub location: Location,
-    pub qualifiers: Vec<(QualifierKey, Option<String>)>,
+    pub qualifiers: Vec<Qualifier>,
 }
 
 impl Feature {
     /// Returns all the values for a given qualifier key. Qualifiers with no
     /// value (ie. `/foo`) are ignored
-    pub fn qualifier_values(&self, key: QualifierKey) -> impl Iterator<Item = &str> {
+    pub fn qualifier_values<'a>(&'a self, key: &'a str) -> impl Iterator<Item = &'a str> {
         self.qualifiers
             .iter()
-            .filter(move |&(k, _)| k == &key)
+            .filter(move |&(k, _)| k == key)
             .filter_map(|(_, v)| v.as_ref().map(String::as_str))
     }
 }
@@ -1046,7 +1048,7 @@ mod test {
     fn test_extract_linear() {
         let features = vec![Feature {
             location: Location::simple_range(0, 100),
-            kind: FeatureKind::from(""),
+            kind: "".into(),
             qualifiers: Vec::new(),
         }];
         let s = Seq {

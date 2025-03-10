@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate gb_io;
 
 use std::fs::File;
@@ -14,14 +13,14 @@ fn main() {
         let r = r.unwrap();
         let record_name = r.name.clone().unwrap();
         for f in &r.features {
-            if f.kind == feature_kind!("CDS") {
+            if f.kind == "CDS" {
                 let name = format!(
                     "{}_{}_{}",
                     record_name,
-                    f.qualifier_values(qualifier_key!("locus_tag"))
+                    f.qualifier_values("locus_tag")
                         .next()
                         .unwrap(),
-                    f.qualifier_values(qualifier_key!("gene")).next().unwrap()
+                    f.qualifier_values("gene").next().unwrap()
                 );
                 // FASTA format
                 writeln!(&mut out, ">{}", name).unwrap();

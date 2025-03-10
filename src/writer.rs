@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use crate::seq::{Date, QualifierKey, Seq};
+use crate::seq::{Date, Seq};
 use std::convert::AsRef;
 use std::io::{self, Write};
 
@@ -9,26 +9,26 @@ const QUALIFIER_INDENT: &str = "                     ";
 const FIELD_INDENT: &str = "            ";
 // Commented out some of these, need to check if they're still in
 // use
-const FTQUAL_NO_QUOTE: &[QualifierKey] = &[
-    qualifier_key!("anticodon"),
-    //qualifier_key!("citation"),
-    qualifier_key!("codon_start"),
-    //qualifier_key!("compare"),
-    //qualifier_key!("direction"),
-    qualifier_key!("estimated_length"),
-    //qualifier_key!("mod_base"),
-    qualifier_key!("number"),
-    qualifier_key!("rpt_type"),
-    //qualifier_key!("rpt_unit_range"),
-    //qualifier_key!("tag_peptide"),
-    qualifier_key!("transl_except"),
-    qualifier_key!("transl_table"),
+const FTQUAL_NO_QUOTE: &[&str] = &[
+    "anticodon",
+    //"citation",
+    "codon_start",
+    //"compare",
+    //"direction",
+    "estimated_length",
+    //"mod_base",
+    "number",
+    "rpt_type",
+    //"rpt_unit_range",
+    //"tag_peptide",
+    "transl_except",
+    "transl_table",
 ];
 
-const POS_QUAL: &[QualifierKey] = &[
+const POS_QUAL: &[&str] = &[
     // should be formatted like Locations
-    qualifier_key!("transl_except"),
-    qualifier_key!("anticodon"),
+    "transl_except",
+    "anticodon",
 ];
 
 
@@ -177,9 +177,9 @@ impl<W: Write> SeqWriter<W> {
                     QUALIFIER_INDENT,
                 )?;
                 for (key, val) in &f.qualifiers {
-                    match *val {
+                    match val {
                         None => writeln!(&mut self.stream, "{}/{}", QUALIFIER_INDENT, key)?,
-                        Some(ref val) => {
+                        Some(val) => {
                             let quote = !FTQUAL_NO_QUOTE.iter().any(|x| x == key);
                             let first_indent = format!("{}/{}=", QUALIFIER_INDENT, key);
                             if POS_QUAL.iter().any(|x| x == key) {

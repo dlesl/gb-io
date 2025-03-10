@@ -16,13 +16,10 @@ extern crate nom;
 #[cfg(feature = "serde")]
 #[macro_use]
 extern crate serde;
-extern crate string_cache;
 #[macro_use]
 extern crate thiserror;
 
 mod errors;
-
-include!(concat!(env!("OUT_DIR"), "/atoms.rs")); // for QualifierKey, FeatureKind
 
 pub mod seq;
 pub mod reader;
