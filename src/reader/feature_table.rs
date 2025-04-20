@@ -134,7 +134,7 @@ enum QualifierKind {
 }
 
 impl From<&str> for QualifierKind {
-        fn from(q: &str) -> QualifierKind {
+    fn from(q: &str) -> QualifierKind {
         match q {
             "translation" => QualifierKind::Sequence,
             _ => QualifierKind::FreeText,
